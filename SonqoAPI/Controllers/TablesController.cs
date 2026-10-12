@@ -1,4 +1,5 @@
-﻿using Microsoft.AspNetCore.Mvc;
+﻿using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Mvc;
 using SonqoAPI.Models.DTOs;
 using SonqoAPI.Service.IService;
 
@@ -6,6 +7,7 @@ namespace SonqoAPI.Controllers
 {
     [Route("api/[controller]")]
     [ApiController]
+    [Authorize(Policy = "RequireStaff")]
     public class TablesController(ITableService tableService) : ControllerBase
     {
         [HttpGet]
@@ -16,6 +18,7 @@ namespace SonqoAPI.Controllers
         }
 
         [HttpPost]
+        [Authorize(Policy = "RequireAdmin")]
         public async Task<IActionResult> CreateTable([FromBody] TableCreateDTO dto)
         {
             if (string.IsNullOrWhiteSpace(dto.Number))
@@ -26,6 +29,7 @@ namespace SonqoAPI.Controllers
         }
 
         [HttpPut("{id}")]
+        [Authorize(Policy = "RequireAdmin")]
         public async Task<IActionResult> UpdateTable(int id, [FromBody] TableCreateDTO dto)
         {
             if (string.IsNullOrWhiteSpace(dto.Number))
@@ -40,6 +44,7 @@ namespace SonqoAPI.Controllers
         }
 
         [HttpDelete("{id}")]
+        [Authorize(Policy = "RequireAdmin")]
         public async Task<IActionResult> DeleteTable(int id)
         {
             try
@@ -52,7 +57,6 @@ namespace SonqoAPI.Controllers
             }
             catch (InvalidOperationException ex)
             {
-                // Captura el error si la mesa está ocupada
                 return BadRequest(ex.Message);
             }
         }

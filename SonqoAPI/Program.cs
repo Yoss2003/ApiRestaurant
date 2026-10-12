@@ -1,10 +1,14 @@
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.Identity;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi;
 using SonqoAPI.Data;
+using SonqoAPI.Models;
 using SonqoAPI.Service;
 using SonqoAPI.Service.IService;
+using System.Threading.RateLimiting;
 using System.Text;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -20,6 +24,7 @@ builder.Services.AddScoped<IOrderService, OrderService>();
 builder.Services.AddScoped<IDishService, DishService>();
 builder.Services.AddScoped<ITableService, TableService>();
 builder.Services.AddScoped<IAuthService, AuthService>();
+builder.Services.AddScoped<IPasswordHasher<User>, PasswordHasher<User>>();
 builder.Services.AddSignalR();
 
 // Autenticación JWT
@@ -39,6 +44,21 @@ builder.Services.AddAuthentication(options =>
         ValidateLifetime = true,
         ClockSkew = TimeSpan.Zero
     };
+
+    options.Events = new JwtBearerEvents
+    {
+        OnMessageReceived = context =>
+        {
+            var accessToken = context.Request.Query["access_token"];
+            var path = context.HttpContext.Request.Path;
+
+            if (!string.IsNullOrEmpty(accessToken) && path.StartsWithSegments("/orderHub"))
+            {
+                context.Token = accessToken;
+            }
+            return Task.CompletedTask;
+        }
+    };
 });
 
 // Configuración unificada de CORS
@@ -46,7 +66,12 @@ builder.Services.AddCors(options =>
 {
     options.AddPolicy("AllowFrontendApps", policy =>
     {
-        policy.SetIsOriginAllowed(origin => true)
+        policy.WithOrigins(
+                "http://localhost:4200",
+                "http://192.168.1.16:4200",
+                "http://localhost:5173",
+                "http://192.168.1.16:5173"
+              )
               .AllowAnyHeader()
               .AllowAnyMethod()
               .AllowCredentials();
@@ -84,9 +109,45 @@ builder.Services.AddAuthorizationBuilder()
     .AddPolicy("RequireKitchen", policy => policy.RequireRole("SuperAdmin", "Admin", "Kitchen"))
     .AddPolicy("RequireStaff", policy => policy.RequireRole("SuperAdmin", "Admin", "Kitchen", "Waiter"));
 
+// --- CONFIGURACIÓN DE RATE LIMITING (Blindaje por IP) ---
+builder.Services.AddRateLimiter(options =>
+{
+    options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+
+    options.AddPolicy("OrderLimit", context =>
+        RateLimitPartition.GetFixedWindowLimiter(
+            partitionKey: context.Connection.RemoteIpAddress?.ToString() ?? "ip-desconocida",
+            factory: partition => new FixedWindowRateLimiterOptions
+            {
+                PermitLimit = 3,
+                Window = TimeSpan.FromSeconds(60),
+                QueueProcessingOrder = QueueProcessingOrder.OldestFirst,
+                QueueLimit = 0
+            }));
+});
+
 var app = builder.Build();
 
+// --- MANEJO GLOBAL DE ERRORES ---
+app.UseExceptionHandler(errorApp =>
+{
+    errorApp.Run(async context =>
+    {
+        context.Response.StatusCode = StatusCodes.Status500InternalServerError;
+        context.Response.ContentType = "application/json";
+
+        await context.Response.WriteAsJsonAsync(new
+        {
+            message = "Ocurrió un error interno en el servidor. Nuestro equipo técnico ya fue notificado."
+        });
+    });
+});
+
+app.UseWebSockets();
+app.UseRouting();
 app.UseCors("AllowFrontendApps");
+
+app.UseRateLimiter();
 
 if (app.Environment.IsDevelopment())
 {

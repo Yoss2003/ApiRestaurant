@@ -1,4 +1,5 @@
 ﻿using Microsoft.IdentityModel.Tokens;
+using Microsoft.AspNetCore.Identity;
 using SonqoAPI.Models;
 using SonqoAPI.Models.DTOs;
 using SonqoAPI.Models.Enum;
@@ -12,27 +13,27 @@ namespace SonqoAPI.Service
 {
     public class AuthService(
         IGenericRepository<User> userRepository,
-        IConfiguration configuration) : IAuthService
+        IConfiguration configuration,
+        IPasswordHasher<User> passwordHasher) : IAuthService
     {
         public async Task<bool> RegisterAsync(RegisterDTO registerDto)
         {
-            // 1. Verificar si el usuario ya existe
             var existingUsers = await userRepository.GetAllAsync(u => u.Username == registerDto.Username);
             if (existingUsers.Any()) return false;
 
-            if (!Enum.TryParse<Role>(registerDto.Role, true, out var parsedRole))
-            {
-                parsedRole = Role.Kitchen;
-            }
+            Role parsedRole = Enum.IsDefined(typeof(Role), registerDto.Role)
+                              ? (Role)registerDto.Role
+                              : Role.Kitchen;
 
-            // 3. Crear el nuevo usuario
             var newUser = new User
             {
                 Username = registerDto.Username,
-                PasswordHash = registerDto.Password,
                 Role = parsedRole,
-                IsActive = true
+                IsActive = true,
+                RestaurantId = registerDto.RestaurantId
             };
+
+            newUser.PasswordHash = passwordHasher.HashPassword(newUser, registerDto.Password);
 
             await userRepository.AddAsync(newUser);
             return await userRepository.SaveChangesAsync();
@@ -43,7 +44,10 @@ namespace SonqoAPI.Service
             var users = await userRepository.GetAllAsync(u => u.Username == loginDto.Username && u.IsActive);
             var user = users.FirstOrDefault();
 
-            if (user == null || user.PasswordHash != loginDto.Password) return null;
+            if (user == null) return null;
+
+            var verificationResult = passwordHasher.VerifyHashedPassword(user, user.PasswordHash, loginDto.Password);
+            if (verificationResult == PasswordVerificationResult.Failed) return null;
 
             var token = GenerateJwtToken(user);
 

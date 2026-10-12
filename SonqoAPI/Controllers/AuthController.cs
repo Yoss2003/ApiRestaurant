@@ -1,17 +1,16 @@
 ﻿using Microsoft.AspNetCore.Mvc;
-using SonqoAPI.Models;
+using Microsoft.AspNetCore.Authorization;
 using SonqoAPI.Models.DTOs;
-using SonqoAPI.Models.Enum;
-using SonqoAPI.Repositories.IRepositories;
 using SonqoAPI.Service.IService;
 
 namespace SonqoAPI.Controllers
 {
     [Route("api/[controller]")]
     [ApiController]
-    public class AuthController(IAuthService authService, IGenericRepository<User> userRepository) : ControllerBase
+    public class AuthController(IAuthService authService) : ControllerBase
     {
         [HttpPost("register")]
+        [Authorize(Policy = "RequireAdmin")]
         public async Task<IActionResult> Register([FromBody] RegisterDTO dto)
         {
             var result = await authService.RegisterAsync(dto);
@@ -23,6 +22,7 @@ namespace SonqoAPI.Controllers
         }
 
         [HttpPost("login")]
+        [AllowAnonymous]
         public async Task<IActionResult> Login([FromBody] LoginRequestDTO loginDto)
         {
             var result = await authService.LoginAsync(loginDto);
@@ -33,23 +33,6 @@ namespace SonqoAPI.Controllers
             }
 
             return Ok(result);
-        }
-
-        // Endpoint para poblar los usuarios de prueba tras limpiar la base de datos
-        [HttpPost("seed-users")]
-        public async Task<IActionResult> SeedUsers()
-        {
-            var hasUsers = await userRepository.ExistsAsync(u => true);
-            if (hasUsers) return BadRequest("Los usuarios ya fueron creados.");
-
-            var admin = new User { Username = "admin", PasswordHash = "admin123", Role = Role.Admin };
-            var waiter = new User { Username = "mesero", PasswordHash = "mesero123", Role = Role.Waiter };
-            var kitchen = new User { Username = "cocina", PasswordHash = "cocina123", Role = Role.Kitchen };
-
-            await userRepository.AddRangeAsync([admin, waiter, kitchen]);
-            await userRepository.SaveChangesAsync();
-
-            return Ok(new { Message = "Usuarios de prueba creados exitosamente." });
         }
     }
 }

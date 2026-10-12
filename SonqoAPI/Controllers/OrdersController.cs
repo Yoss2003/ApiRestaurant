@@ -1,22 +1,24 @@
-﻿using Microsoft.AspNetCore.Mvc;
+﻿using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.SignalR;
+using Microsoft.AspNetCore.RateLimiting;
 using SonqoAPI.Hubs;
-using SonqoAPI.Models;
 using SonqoAPI.Models.DTOs;
-using SonqoAPI.Repositories.IRepositories;
 using SonqoAPI.Service.IService;
 
 namespace SonqoAPI.Controllers
 {
     [Route("api/[controller]")]
     [ApiController]
+    [Authorize]
     public class OrdersController(
         IOrderService orderService,
-        IGenericRepository<Table> tableRepository,
         IHubContext<OrderHub> hubContext) : ControllerBase
     {
 
         [HttpPost]
+        [AllowAnonymous]
+        [EnableRateLimiting("OrderLimit")]
         public async Task<IActionResult> CreateOrder([FromBody] OrderCreateDTO orderDto)
         {
             var success = await orderService.CreateOrderAsync(orderDto);
@@ -32,6 +34,7 @@ namespace SonqoAPI.Controllers
         }
 
         [HttpPatch("details/{detailId}/status")]
+        [Authorize(Policy = "RequireKitchen")]
         public async Task<IActionResult> UpdateDetailStatus(int detailId, [FromBody] StatusUpdateDTO dto)
         {
             var success = await orderService.UpdateOrderDetailStatusAsync(detailId, dto.Status);
@@ -44,6 +47,7 @@ namespace SonqoAPI.Controllers
         }
 
         [HttpGet("kitchen")]
+        [Authorize(Policy = "RequireKitchen")]
         public async Task<IActionResult> GetKitchenOrders()
         {
             var orders = await orderService.GetKitchenOrdersAsync();
@@ -54,8 +58,7 @@ namespace SonqoAPI.Controllers
         public async Task<IActionResult> GetActiveOrder(int tableId)
         {
             var order = await orderService.GetActiveOrderAsync(tableId);
-            if (order == null) return NotFound(new { message = "No hay ninguna orden activa en esta mesa." });
-
+            if (order == null) return NoContent();
             return Ok(order);
         }
 
@@ -73,29 +76,11 @@ namespace SonqoAPI.Controllers
         }
 
         [HttpGet("dashboard")]
+        [Authorize(Policy = "RequireAdmin")]
         public async Task<IActionResult> GetDashboardMetrics()
         {
             var metrics = await orderService.GetDashboardMetricsAsync();
             return Ok(metrics);
-        }
-
-        [HttpPost("seed-tables")]
-        public async Task<IActionResult> SeedTestTables()
-        {
-            var hasTables = await tableRepository.ExistsAsync(t => true);
-            if (hasTables)
-            {
-                return BadRequest("Las mesas de prueba ya han sido creadas.");
-            }
-
-            var table1 = new Table { Number = "Mesa 1", Capacity = 4, IsAvailable = true };
-            var table2 = new Table { Number = "Mesa 2", Capacity = 2, IsAvailable = true };
-            var table3 = new Table { Number = "Barra 1", Capacity = 1, IsAvailable = true };
-
-            await tableRepository.AddRangeAsync([table1, table2, table3]);
-            await tableRepository.SaveChangesAsync();
-
-            return Ok(new { Message = "Mesas de prueba creadas exitosamente." });
         }
     }
 }

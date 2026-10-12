@@ -151,19 +151,23 @@ namespace SonqoAPI.Service
 
         public async Task<bool> RestockIngredientAsync(RestockDTO dto)
         {
+            if (dto.QuantityAdded <= 0 || dto.TotalCostPaid < 0) return false;
+
             var ingredient = await ingredientRepository.GetByIdAsync(dto.IngredientId);
             if (ingredient == null) return false;
 
-            var currentTotalValue = ingredient.CurrentStock * ingredient.UnitCost;
+            var effectiveCurrentStock = ingredient.CurrentStock > 0 ? ingredient.CurrentStock : 0;
+
+            var currentTotalValue = effectiveCurrentStock * ingredient.UnitCost;
             var newTotalValue = currentTotalValue + dto.TotalCostPaid;
-            var newTotalStock = ingredient.CurrentStock + dto.QuantityAdded;
+            var newTotalStock = effectiveCurrentStock + dto.QuantityAdded;
 
             ingredient.CurrentStock = newTotalStock;
             ingredient.UnitCost = newTotalValue / newTotalStock;
 
             if (ingredient.IsPerishable && dto.NewExpirationDate.HasValue)
             {
-                ingredient.ExpirationDate = dto.NewExpirationDate.Value;
+                ingredient.ExpirationDate = dto.NewExpirationDate.Value.ToUniversalTime();
             }
 
             ingredientRepository.Update(ingredient);

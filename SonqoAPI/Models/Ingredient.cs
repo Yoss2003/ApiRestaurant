@@ -19,6 +19,7 @@ namespace SonqoAPI.Models
         [MaxLength(20)]
         public string UnitOfMeasure { get; set; } = string.Empty;
 
+        [ConcurrencyCheck]
         [Column(TypeName = "decimal(18,3)")]
         public decimal CurrentStock { get; set; }
 

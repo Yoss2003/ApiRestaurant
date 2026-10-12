@@ -66,6 +66,7 @@ namespace SonqoAPI.Migrations
                         .HasColumnType("character varying(50)");
 
                     b.Property<decimal>("CurrentStock")
+                        .IsConcurrencyToken()
                         .HasColumnType("decimal(18,3)");
 
                     b.Property<DateTime?>("ExpirationDate")

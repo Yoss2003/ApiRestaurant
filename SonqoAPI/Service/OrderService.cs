@@ -1,4 +1,5 @@
-﻿using SonqoAPI.Models;
+﻿using Microsoft.EntityFrameworkCore;
+using SonqoAPI.Models;
 using SonqoAPI.Models.DTOs;
 using SonqoAPI.Models.Enum;
 using SonqoAPI.Repositories.IRepositories;
@@ -31,6 +32,8 @@ namespace SonqoAPI.Service
             {
                 foreach (var item in orderDto.Items)
                 {
+                    if (item.Quantity <= 0) continue;
+
                     var dish = await dishRepository.GetByIdAsync(item.DishId);
 
                     if (dish != null && dish.IsAvailable)
@@ -54,9 +57,15 @@ namespace SonqoAPI.Service
                 }
 
                 orderRepository.Update(activeOrder);
-                await orderRepository.SaveChangesAsync();
-                await ingredientRepository.SaveChangesAsync();
-                return true;
+                try
+                {
+                    await orderRepository.SaveChangesAsync();
+                    return true;
+                }
+                catch
+                {
+                    return false;
+                }
             }
             else
             {
@@ -72,6 +81,8 @@ namespace SonqoAPI.Service
 
                 foreach (var item in orderDto.Items)
                 {
+                    if (item.Quantity <= 0) continue;
+
                     var dish = await dishRepository.GetByIdAsync(item.DishId);
 
                     if (dish != null && dish.IsAvailable)
@@ -103,7 +114,6 @@ namespace SonqoAPI.Service
 
                 await orderRepository.AddAsync(newOrder);
                 await orderRepository.SaveChangesAsync();
-                await ingredientRepository.SaveChangesAsync();
 
                 return true;
             }
@@ -123,12 +133,9 @@ namespace SonqoAPI.Service
 
         public async Task<IEnumerable<KitchenOrderDTO>> GetKitchenOrdersAsync()
         {
-            // Traemos las órdenes que están activas
             var activeOrders = await orderRepository.GetAllAsync(o => o.Status != OrderStatus.Paid && o.Status != OrderStatus.Cancelled);
             var allTables = await tableRepository.GetAllAsync();
             var allDishes = await dishRepository.GetAllAsync();
-
-            // Traemos todos los detalles (aprovechando que inyectaste orderDetailRepository)[cite: 13]
             var allDetails = await orderDetailRepository.GetAllAsync();
 
             var kitchenOrders = new List<KitchenOrderDTO>();
@@ -147,7 +154,6 @@ namespace SonqoAPI.Service
 
                 foreach (var detail in details)
                 {
-                    // La cocina solo debe ver los platos que faltan por entregar
                     if (detail.Status == "Pending" || detail.Status == "Preparing")
                     {
                         var dish = allDishes.FirstOrDefault(d => d.Id == detail.DishId);
@@ -163,7 +169,6 @@ namespace SonqoAPI.Service
                     }
                 }
 
-                // Solo enviamos el ticket a la cocina si tiene platos pendientes
                 if (dto.Details.Count != 0)
                 {
                     kitchenOrders.Add(dto);
@@ -175,7 +180,6 @@ namespace SonqoAPI.Service
 
         public async Task<ActiveOrderDTO?> GetActiveOrderAsync(int tableId)
         {
-            // Buscamos la orden que no esté ni pagada ni cancelada
             var activeOrders = await orderRepository.GetAllAsync(o => o.TableId == tableId && o.Status != OrderStatus.Paid && o.Status != OrderStatus.Cancelled);
             var order = activeOrders.FirstOrDefault();
 
@@ -216,7 +220,6 @@ namespace SonqoAPI.Service
 
             if (order == null) return false;
 
-            // 1. Procesamos los pagos y los guardamos en BD
             if (paymentData.SplitPayments != null && paymentData.SplitPayments.Count != 0)
             {
                 foreach (var split in paymentData.SplitPayments)
@@ -243,20 +246,15 @@ namespace SonqoAPI.Service
                 await paymentRepository.AddAsync(payment);
             }
 
-            // Guardamos todos los pagos insertados
-            await paymentRepository.SaveChangesAsync();
-
-            // 2. Cambiamos el estado de la orden a Pagada
             order.Status = OrderStatus.Paid;
             orderRepository.Update(order);
-            await orderRepository.SaveChangesAsync();
 
-            // 3. Liberamos la mesa para que vuelva a estar verde
             var table = await tableRepository.GetByIdAsync(tableId);
             if (table != null)
             {
                 table.IsAvailable = true;
                 tableRepository.Update(table);
+
                 await tableRepository.SaveChangesAsync();
             }
 
