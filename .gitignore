@@ -1,0 +1,27 @@
+# Archivos compilados y carpetas temporales de .NET
+[Bb]in/
+[Oo]bj/
+/.vs/
+/x64/
+/x86/
+[Ll]ogs/
+[Tt]emp/
+
+# Archivos de configuración de usuario (donde sueles guardar cadenas de conexión locales)
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+
+# Configuración de herramientas y editores
+.vscode/
+.idea/
+*.rsuser
+.gradle
+pack/
+pack.lock
+
+# Archivos de entorno o secretos (¡Muy importante para que no subas tus contraseñas de PostgreSQL!)
+appsettings.Development.json
+appsettings.json
+.env

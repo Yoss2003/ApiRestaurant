@@ -1,0 +1,6 @@
+@SonqoAPI_HostAddress = http://localhost:5065
+
+GET {{SonqoAPI_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###
