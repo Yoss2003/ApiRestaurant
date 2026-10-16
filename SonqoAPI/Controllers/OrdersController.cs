@@ -5,9 +5,7 @@ using Microsoft.AspNetCore.SignalR;
 using SonqoAPI.Hubs;
 using SonqoAPI.Models.DTOs;
 using SonqoAPI.Service.IService;
-using System.Linq;
 using System.Security.Claims;
-using System.Threading.Tasks;
 
 namespace SonqoAPI.Controllers
 {
@@ -15,8 +13,7 @@ namespace SonqoAPI.Controllers
     [ApiController]
     [Authorize]
     public class OrdersController(
-        IOrderService orderService,
-        IHubContext<OrderHub> hubContext) : ControllerBase
+        IOrderService orderService) : ControllerBase
     {
         private int GetCurrentRestaurantId()
         {
@@ -29,12 +26,17 @@ namespace SonqoAPI.Controllers
         [EnableRateLimiting("OrderLimit")]
         public async Task<IActionResult> CreateOrder([FromBody] OrderCreateDTO orderDto)
         {
-            int restaurantId = GetCurrentRestaurantId();
-            var success = await orderService.CreateOrderAsync(orderDto, restaurantId);
+            int? jwtRestaurantId = null;
+            var claim = User.Claims.FirstOrDefault(c => c.Type == "RestaurantId");
+            if (claim != null && int.TryParse(claim.Value, out int id))
+            {
+                jwtRestaurantId = id;
+            }
+
+            var success = await orderService.CreateOrderAsync(orderDto, jwtRestaurantId);
             if (!success)
                 return BadRequest(new { message = "No se pudo procesar el pedido. Verifique stock y mesa." });
 
-            await hubContext.Clients.All.SendAsync("ReceiveOrderUpdate", "ORDER_CREATED");
             return Ok(new { message = "Pedido creado exitosamente." });
         }
 

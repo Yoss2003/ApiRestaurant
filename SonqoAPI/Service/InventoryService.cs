@@ -72,9 +72,7 @@ namespace SonqoAPI.Service
             ingredient.Name = dto.Name;
             ingredient.Category = dto.Category;
             ingredient.UnitOfMeasure = dto.BaseUnit;
-            ingredient.CurrentStock = dto.InitialStock;
             ingredient.MinimumStock = dto.MinimumStock;
-            ingredient.UnitCost = dto.InitialCost;
             ingredient.IsPerishable = dto.IsPerishable;
             ingredient.ExpirationDate = dto.ExpirationDate?.ToUniversalTime();
 

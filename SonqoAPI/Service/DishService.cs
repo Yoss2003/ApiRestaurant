@@ -1,12 +1,8 @@
 ﻿using Microsoft.EntityFrameworkCore;
-using SonqoAPI.Helpers;
 using SonqoAPI.Models;
 using SonqoAPI.Models.DTOs;
 using SonqoAPI.Repositories.IRepositories;
 using SonqoAPI.Service.IService;
-using System.Collections.Generic;
-using System.Linq;
-using System.Threading.Tasks;
 
 namespace SonqoAPI.Service
 {
@@ -15,11 +11,10 @@ namespace SonqoAPI.Service
         IGenericRepository<RecipeDetails> recipeRepository,
         IGenericRepository<Ingredient> ingredientRepository) : IDishService
     {
-        // 1. OBTENEMOS LOS PLATOS Y CALCULAMOS SU COSTO AL VUELO
         public async Task<IEnumerable<DishResponseDTO>> GetAllActiveDishesAsync(int restaurantId)
         {
             var dishes = await dishRepository.GetAllAsync(d => d.IsAvailable && d.RestaurantId == restaurantId);
-            var recipes = await recipeRepository.GetAllAsync(); // Idealmente filtrar por RestaurantId si RecipeDetails lo tuviera
+            var recipes = await recipeRepository.GetAllAsync();
             var ingredients = await ingredientRepository.GetAllAsync(i => i.RestaurantId == restaurantId);
 
             var responseList = new List<DishResponseDTO>();
@@ -30,6 +25,8 @@ namespace SonqoAPI.Service
                 int maxAvailable = int.MaxValue;
                 if (!dishRecipes.Any()) maxAvailable = 0;
 
+                int portions = dish.YieldPortions > 0 ? dish.YieldPortions : 1;
+
                 foreach (var detail in dishRecipes)
                 {
                     var ing = ingredients.FirstOrDefault(i => i.Id == detail.IngredientId);
@@ -38,7 +35,6 @@ namespace SonqoAPI.Service
                         totalCost += detail.RequiredQuantity * ing.UnitCost;
                         if (detail.RequiredQuantity > 0)
                         {
-                            int portions = dish.YieldPortions > 0 ? dish.YieldPortions : 1;
                             decimal requiredPerPlate = detail.RequiredQuantity / portions;
                             int possiblePlates = (int)Math.Floor(ing.CurrentStock / requiredPerPlate);
                             if (possiblePlates < maxAvailable)
@@ -49,7 +45,9 @@ namespace SonqoAPI.Service
                     }
                 }
                 if (maxAvailable == int.MaxValue) maxAvailable = 0;
-                decimal margin = dish.Price > 0 ? ((dish.Price - totalCost) / dish.Price) * 100m : 0m;
+
+                decimal portionCost = totalCost / portions;
+                decimal margin = dish.Price > 0 ? ((dish.Price - portionCost) / dish.Price) * 100m : 0m;
 
                 responseList.Add(new DishResponseDTO
                 {
@@ -57,8 +55,8 @@ namespace SonqoAPI.Service
                     Name = dish.Name,
                     Category = dish.Category,
                     Price = dish.Price,
-                    YieldPortions = dish.YieldPortions > 0 ? dish.YieldPortions : 1,
-                    RecipeCost = Math.Round(totalCost, 2),
+                    YieldPortions = portions,
+                    RecipeCost = Math.Round(portionCost, 2),
                     ProfitMargin = Math.Round(margin, 2),
                     MaxAvailable = maxAvailable
                 });
@@ -144,44 +142,82 @@ namespace SonqoAPI.Service
             var dish = await dishRepository.GetByIdAsync(recipeDto.DishId);
             if (dish == null || dish.RestaurantId != restaurantId) return false;
 
-            using var transaction = await dishRepository.BeginTransactionAsync();
-            try
+            if (recipeDto.Items != null && recipeDto.Items.Count > 0)
             {
-                dish.YieldPortions = recipeDto.YieldPortions > 0 ? recipeDto.YieldPortions : 1;
-                dishRepository.Update(dish);
+                var ingredientIds = recipeDto.Items.Select(i => i.IngredientId).Distinct().ToList();
+                var validIngredients = await ingredientRepository.GetQueryable()
+                    .Where(i => ingredientIds.Contains(i.Id) && i.RestaurantId == restaurantId)
+                    .ToListAsync();
 
-                var existingRecipes = await recipeRepository.GetAllAsync(r => r.DishId == recipeDto.DishId);
-                foreach (var oldRecipe in existingRecipes)
+                if (validIngredients.Count != ingredientIds.Count)
                 {
-                    recipeRepository.Delete(oldRecipe);
+                    return false;
                 }
-                await recipeRepository.SaveChangesAsync();
 
-                if (recipeDto.Items != null && recipeDto.Items.Count > 0)
+                using var transaction = await dishRepository.BeginTransactionAsync();
+                try
                 {
+                    dish.YieldPortions = recipeDto.YieldPortions > 0 ? recipeDto.YieldPortions : 1;
+                    dishRepository.Update(dish);
+
+                    var existingRecipes = await recipeRepository.GetAllAsync(r => r.DishId == recipeDto.DishId);
+                    foreach (var oldRecipe in existingRecipes)
+                    {
+                        recipeRepository.Delete(oldRecipe);
+                    }
+                    await recipeRepository.SaveChangesAsync();
+
                     foreach (var item in recipeDto.Items)
                     {
                         if (item.TotalQuantity <= 0) continue;
+
+                        var ingredient = validIngredients.First(i => i.Id == item.IngredientId);
+
+                        decimal normalizedQuantity = item.TotalQuantity;
+                        string recipeUnit = (item.Unit ?? "").ToLower().Trim();
+                        string baseUnit = (ingredient.UnitOfMeasure ?? "").ToLower().Trim();
+
+                        if (recipeUnit != baseUnit)
+                        {
+                            if ((recipeUnit == "g" && baseUnit == "kg") || (recipeUnit == "ml" && baseUnit == "l"))
+                            {
+                                normalizedQuantity = item.TotalQuantity / 1000m;
+                            }
+                            else if ((recipeUnit == "kg" && baseUnit == "g") || (recipeUnit == "l" && baseUnit == "ml"))
+                            {
+                                normalizedQuantity = item.TotalQuantity * 1000m;
+                            }
+                            else
+                            {
+                                await transaction.RollbackAsync();
+                                return false;
+                            }
+                        }
+
+                        normalizedQuantity = Math.Round(normalizedQuantity, 3, MidpointRounding.AwayFromZero);
+                        if (normalizedQuantity <= 0) continue;
 
                         var newRecipeDetail = new RecipeDetails
                         {
                             DishId = recipeDto.DishId,
                             IngredientId = item.IngredientId,
-                            RequiredQuantity = item.TotalQuantity
+                            RequiredQuantity = normalizedQuantity
                         };
                         await recipeRepository.AddAsync(newRecipeDetail);
                     }
-                }
 
-                await recipeRepository.SaveChangesAsync();
-                await transaction.CommitAsync();
-                return true;
+                    await recipeRepository.SaveChangesAsync();
+                    await transaction.CommitAsync();
+                    return true;
+                }
+                catch (Exception)
+                {
+                    await transaction.RollbackAsync();
+                    return false;
+                }
             }
-            catch (Exception)
-            {
-                await transaction.RollbackAsync();
-                return false;
-            }
+
+            return true;
         }
 
         public async Task<IEnumerable<ShoppingListItemDTO>> GetShoppingListAsync(int restaurantId)
@@ -193,11 +229,11 @@ namespace SonqoAPI.Service
             var requiredMap = new Dictionary<int, decimal>();
             foreach (var dish in dishes)
             {
-                int portions = dish.YieldPortions > 0 ? dish.YieldPortions : 1;
                 var dishRecipes = recipes.Where(r => r.DishId == dish.Id);
                 foreach (var detail in dishRecipes)
                 {
-                    decimal totalNeededForDish = detail.RequiredQuantity * portions;
+                    decimal totalNeededForDish = detail.RequiredQuantity;
+
                     if (requiredMap.ContainsKey(detail.IngredientId))
                     {
                         requiredMap[detail.IngredientId] += totalNeededForDish;

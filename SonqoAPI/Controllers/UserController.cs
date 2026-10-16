@@ -2,9 +2,7 @@
 using Microsoft.AspNetCore.Mvc;
 using SonqoAPI.Models.DTOs;
 using SonqoAPI.Service.IService;
-using System.Linq;
 using System.Security.Claims;
-using System.Threading.Tasks;
 
 namespace SonqoAPI.Controllers
 {
@@ -17,6 +15,11 @@ namespace SonqoAPI.Controllers
         {
             var claim = User.Claims.FirstOrDefault(c => c.Type == "RestaurantId");
             return claim != null && int.TryParse(claim.Value, out int id) ? id : 0;
+        }
+
+        private string GetCurrentRole()
+        {
+            return User.FindFirst(ClaimTypes.Role)?.Value ?? "";
         }
 
         [HttpGet]
@@ -33,10 +36,10 @@ namespace SonqoAPI.Controllers
             if (!ModelState.IsValid) return BadRequest(ModelState);
 
             int restaurantId = GetCurrentRestaurantId();
-            var newUser = await authService.CreateUserAsync(dto, restaurantId, User.FindFirst(ClaimTypes.Role)?.Value ?? "");
+            var newUser = await authService.CreateUserAsync(dto, restaurantId, GetCurrentRole());
             if (newUser == null)
             {
-                return BadRequest(new { message = "El nombre de usuario ya está en uso." });
+                return BadRequest(new { message = "El nombre de usuario ya está en uso o no tiene los permisos suficientes." });
             }
             return Ok(newUser);
         }
@@ -47,10 +50,10 @@ namespace SonqoAPI.Controllers
             if (!ModelState.IsValid) return BadRequest(ModelState);
 
             int restaurantId = GetCurrentRestaurantId();
-            var result = await authService.UpdateUserAsync(id, dto, restaurantId, User.FindFirst(ClaimTypes.Role)?.Value ?? "");
+            var result = await authService.UpdateUserAsync(id, dto, restaurantId, GetCurrentRole());
             if (!result)
             {
-                return BadRequest(new { message = "No se pudo actualizar." });
+                return BadRequest(new { message = "No se pudo actualizar. Verifique que no haya duplicidad o falta de permisos." });
             }
             return Ok(new { message = "Usuario actualizado correctamente." });
         }
@@ -59,7 +62,9 @@ namespace SonqoAPI.Controllers
         public async Task<IActionResult> DeleteUser(int id)
         {
             int restaurantId = GetCurrentRestaurantId();
-            var result = await authService.DeleteUserAsync(id, restaurantId);
+
+            var result = await authService.DeleteUserAsync(id, restaurantId, GetCurrentRole());
+
             if (!result)
             {
                 return BadRequest(new { message = "No se pudo eliminar el usuario." });

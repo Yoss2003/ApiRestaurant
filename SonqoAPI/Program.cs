@@ -28,8 +28,12 @@ builder.Services.AddScoped<IAuthService, AuthService>();
 builder.Services.AddScoped<IPasswordHasher<User>, PasswordHasher<User>>();
 builder.Services.AddSignalR();
 
-// Autenticación JWT
-var secretKey = builder.Configuration["JwtSettings:SecretKey"];
+// RA40: Valores por defecto coherentes para el JWT
+var jwtSettings = builder.Configuration.GetSection("JwtSettings");
+var secretKey = jwtSettings["SecretKey"] ?? "ClaveDeRespaldoSeguraParaDesarrollo2026*!";
+var issuer = jwtSettings["Issuer"] ?? "SonqoAPI";
+var audience = jwtSettings["Audience"] ?? "SonqoAdmin";
+
 builder.Services.AddAuthentication(options =>
 {
     options.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;
@@ -42,9 +46,9 @@ builder.Services.AddAuthentication(options =>
         ValidateAudience = true,
         ValidateLifetime = true,
         ValidateIssuerSigningKey = true,
-        ValidIssuer = builder.Configuration["JwtSettings:Issuer"],
-        ValidAudience = builder.Configuration["JwtSettings:Audience"],
-        IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(builder.Configuration["JwtSettings:SecretKey"]!)),
+        ValidIssuer = issuer,
+        ValidAudience = audience,
+        IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(secretKey)),
         ClockSkew = TimeSpan.Zero,
         RoleClaimType = ClaimTypes.Role
     };
@@ -132,21 +136,6 @@ builder.Services.AddRateLimiter(options =>
 
 var app = builder.Build();
 
-// --- MANEJO GLOBAL DE ERRORES ---
-app.UseExceptionHandler(errorApp =>
-{
-    errorApp.Run(async context =>
-    {
-        context.Response.StatusCode = StatusCodes.Status500InternalServerError;
-        context.Response.ContentType = "application/json";
-
-        await context.Response.WriteAsJsonAsync(new
-        {
-            message = "Ocurrió un error interno en el servidor. Nuestro equipo técnico ya fue notificado."
-        });
-    });
-});
-
 app.UseWebSockets();
 app.UseRouting();
 app.UseCors("AllowFrontendApps");
@@ -160,6 +149,9 @@ if (app.Environment.IsDevelopment())
 }
 
 app.UseHttpsRedirection();
+
+// RA27 / RC09: Nuestro Middleware Global de Excepciones
+app.UseMiddleware<SonqoAPI.Middlewares.ErrorHandlingMiddleware>();
 
 app.UseAuthentication();
 app.UseAuthorization();

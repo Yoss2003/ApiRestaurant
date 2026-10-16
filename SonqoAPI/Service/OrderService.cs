@@ -19,17 +19,28 @@ namespace SonqoAPI.Service
         IGenericRepository<OrderDetail> orderDetailRepository,
         IGenericRepository<Payment> paymentRepository,
         IGenericRepository<PaymentMethod> paymentMethodRepository,
-        IHubContext<OrderHub> orderHub,
-        ICashRegisterService cashService
+        IGenericRepository<CashRegister> cashRegisterRepository,
+        IHubContext<OrderHub> orderHub
         ) : IOrderService
     {
-        public async Task<bool> CreateOrderAsync(OrderCreateDTO orderDto, int restaurantId)
+        public async Task<bool> CreateOrderAsync(OrderCreateDTO orderDto, int? jwtRestaurantId = null)
         {
-            var table = await tableRepository.GetByIdAsync(orderDto.TableId);
-            if (table == null || table.IsDeleted || table.RestaurantId != restaurantId) return false;
+            var table = await tableRepository.GetQueryable()
+                .Include(t => t.Restaurant)
+                .FirstOrDefaultAsync(t => t.Id == orderDto.TableId);
+
+            if (table == null || table.IsDeleted || table.Restaurant == null || !table.Restaurant.IsActive)
+                return false;
+
+            int actualRestaurantId = table.RestaurantId;
+
+            if (jwtRestaurantId.HasValue && jwtRestaurantId.Value != 0 && jwtRestaurantId.Value != actualRestaurantId)
+            {
+                return false;
+            }
 
             var recipes = await recipeRepository.GetAllAsync();
-            var ingredients = await ingredientRepository.GetAllAsync(i => i.RestaurantId == restaurantId);
+            var ingredients = await ingredientRepository.GetAllAsync(i => i.RestaurantId == actualRestaurantId);
 
             var requiredIngredients = new Dictionary<int, decimal>();
             var validDishes = new Dictionary<int, Dish>();
@@ -38,7 +49,7 @@ namespace SonqoAPI.Service
             {
                 if (item.Quantity <= 0) continue;
                 var dish = await dishRepository.GetByIdAsync(item.DishId);
-                if (dish == null || !dish.IsAvailable || dish.RestaurantId != restaurantId) continue;
+                if (dish == null || !dish.IsAvailable || dish.RestaurantId != actualRestaurantId) continue;
 
                 validDishes[item.DishId] = dish;
 
@@ -68,7 +79,7 @@ namespace SonqoAPI.Service
 
             var existingOrders = await orderRepository.GetAllAsync(o =>
                 o.TableId == orderDto.TableId &&
-                o.RestaurantId == restaurantId &&
+                o.RestaurantId == actualRestaurantId &&
                 o.Status != OrderStatus.Paid &&
                 o.Status != OrderStatus.Cancelled);
 
@@ -110,7 +121,7 @@ namespace SonqoAPI.Service
                 var newOrder = new Order
                 {
                     TableId = orderDto.TableId,
-                    RestaurantId = restaurantId,
+                    RestaurantId = actualRestaurantId,
                     OrderDate = DateTime.UtcNow,
                     Status = OrderStatus.Pending,
                     TotalAmount = 0
@@ -148,7 +159,7 @@ namespace SonqoAPI.Service
 
                 try
                 {
-                    await orderRepository.SaveChangesAsync(); 
+                    await orderRepository.SaveChangesAsync();
                     targetOrderId = newOrder.Id;
                 }
                 catch (DbUpdateConcurrencyException) { return false; }
@@ -156,7 +167,7 @@ namespace SonqoAPI.Service
 
             if (targetOrderId > 0)
             {
-                await orderHub.Clients.All.SendAsync("ReceiveOrderUpdate", new { orderId = targetOrderId, type = "ORDER_CREATED" });
+                await orderHub.Clients.Group(actualRestaurantId.ToString()).SendAsync("ReceiveOrderUpdate", new { orderId = targetOrderId, type = "ORDER_CREATED" });
             }
 
             return true;
@@ -188,7 +199,7 @@ namespace SonqoAPI.Service
             detail.Status = status;
             orderDetailRepository.Update(detail);
             await orderDetailRepository.SaveChangesAsync();
-            await orderHub.Clients.All.SendAsync("ReceiveOrderUpdate", new { detailId, status });
+            await orderHub.Clients.Group(restaurantId.ToString()).SendAsync("ReceiveOrderUpdate", new { detailId, status });
             return true;
         }
 
@@ -276,84 +287,99 @@ namespace SonqoAPI.Service
             return dto;
         }
 
-        public async Task<bool> PayOrderAsync(int orderId, PayOrderDTO paymentDto, int restaurantId)
+        public async Task<bool> PayOrderAsync(int orderId, PayOrderDTO paymentData, int restaurantId)
         {
-            var openRegister = await cashService.GetOpenRegisterAsync(restaurantId);
+            var openRegister = await cashRegisterRepository.GetQueryable()
+                .FirstOrDefaultAsync(c => c.RestaurantId == restaurantId && c.IsOpen);
+
             if (openRegister == null) return false;
 
-            using var transaction = await orderRepository.BeginTransactionAsync(IsolationLevel.ReadCommitted);
+            using var transaction = await orderRepository.BeginTransactionAsync();
             try
             {
                 var order = await orderRepository.GetQueryable()
                     .Include(o => o.OrderDetails)
+                    .Include(o => o.Table)
                     .Include(o => o.Payments)
                     .FirstOrDefaultAsync(o => o.Id == orderId && o.RestaurantId == restaurantId);
 
-                if (order == null || order.Status == OrderStatus.Paid) return false;
-
-                decimal totalOrderAmount = order.OrderDetails
-                                             .Where(d => d.Status != "Cancelled")
-                                             .Sum(d => d.UnitPrice * d.Quantity);
-
-                decimal previouslyPaid = order.Payments.Sum(p => p.Amount);
-                decimal currentPaymentSum = paymentDto.SplitPayments != null && paymentDto.SplitPayments.Count > 0
-                                            ? paymentDto.SplitPayments.Sum(p => p.Amount)
-                                            : paymentDto.TotalAmountPaid;
-
-                decimal outstandingBalance = totalOrderAmount - previouslyPaid;
-
-                if (Math.Abs(outstandingBalance - currentPaymentSum) > 0.01m) return false;
-
-                if (paymentDto.SplitPayments != null && paymentDto.SplitPayments.Count > 0)
+                if (order == null || order.Status == OrderStatus.Paid || order.Status == OrderStatus.Cancelled)
                 {
-                    foreach (var p in paymentDto.SplitPayments)
+                    await transaction.RollbackAsync();
+                    return false;
+                }
+
+                decimal calculatedTotal = order.OrderDetails.Sum(d => Math.Round(d.SubTotal, 2, MidpointRounding.AwayFromZero));
+                order.TotalAmount = calculatedTotal;
+
+                decimal amountAlreadyPaid = order.Payments.Sum(p => Math.Round(p.Amount, 2, MidpointRounding.AwayFromZero));
+                decimal remainingBalance = calculatedTotal - amountAlreadyPaid;
+
+                decimal incomingPaymentTotal = 0;
+
+                if (paymentData.SplitPayments != null && paymentData.SplitPayments.Count > 0)
+                {
+                    incomingPaymentTotal = paymentData.SplitPayments.Sum(p => Math.Round(p.Amount, 2, MidpointRounding.AwayFromZero));
+                }
+                else
+                {
+                    incomingPaymentTotal = Math.Round(paymentData.TotalAmountPaid, 2, MidpointRounding.AwayFromZero);
+                }
+
+                if (Math.Abs(incomingPaymentTotal - remainingBalance) > 0.01m)
+                {
+                    await transaction.RollbackAsync();
+                    return false;
+                }
+
+                if (paymentData.SplitPayments != null && paymentData.SplitPayments.Count > 0)
+                {
+                    foreach (var split in paymentData.SplitPayments)
                     {
-                        if (p.Amount <= 0) return false;
+                        if (split.Amount <= 0) continue;
                         order.Payments.Add(new Payment
                         {
                             OrderId = order.Id,
-                            PaymentMethodId = p.PaymentMethodId,
-                            Amount = p.Amount,
+                            PaymentMethodId = split.PaymentMethodId,
+                            Amount = Math.Round(split.Amount, 2, MidpointRounding.AwayFromZero),
                             PaymentDate = DateTime.UtcNow
                         });
                     }
                 }
                 else
                 {
-                    if (paymentDto.TotalAmountPaid <= 0) return false;
-                    order.Payments.Add(new Payment
+                    if (paymentData.TotalAmountPaid > 0)
                     {
-                        OrderId = order.Id,
-                        PaymentMethodId = paymentDto.PrimaryPaymentMethodId,
-                        Amount = paymentDto.TotalAmountPaid,
-                        PaymentDate = DateTime.UtcNow
-                    });
+                        order.Payments.Add(new Payment
+                        {
+                            OrderId = order.Id,
+                            PaymentMethodId = paymentData.PrimaryPaymentMethodId,
+                            Amount = Math.Round(paymentData.TotalAmountPaid, 2, MidpointRounding.AwayFromZero),
+                            PaymentDate = DateTime.UtcNow
+                        });
+                    }
                 }
 
                 order.Status = OrderStatus.Paid;
+                orderRepository.Update(order);
 
-                var table = await tableRepository.GetByIdAsync(order.TableId);
-                if (table != null)
+                if (order.Table != null)
                 {
-                    table.IsAvailable = true;
-                    tableRepository.Update(table);
+                    order.Table.IsAvailable = true;
+                    tableRepository.Update(order.Table);
                 }
 
                 await orderRepository.SaveChangesAsync();
+                await tableRepository.SaveChangesAsync();
                 await transaction.CommitAsync();
+                await orderHub.Clients.Group(order.RestaurantId.ToString()).SendAsync("ReceiveOrderUpdate", new { orderId = order.Id, type = "ORDER_PAID" });
 
-                await orderHub.Clients.All.SendAsync("OrderPaid", orderId);
                 return true;
             }
-            catch (DbUpdateConcurrencyException)
+            catch (Exception)
             {
                 await transaction.RollbackAsync();
                 return false;
-            }
-            catch
-            {
-                await transaction.RollbackAsync();
-                throw;
             }
         }
 

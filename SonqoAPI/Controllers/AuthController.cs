@@ -13,12 +13,9 @@ namespace SonqoAPI.Controllers
         [Authorize(Policy = "RequireAdmin")]
         public async Task<IActionResult> Register([FromBody] RegisterDTO dto)
         {
-            var result = await authService.RegisterAsync(dto);
-
-            if (!result)
-                return BadRequest(new { message = "No se pudo registrar el usuario (el nombre de usuario ya existe)." });
-
-            return Ok(new { message = "Usuario registrado exitosamente. Ya puedes iniciar sesión." });
+            var success = await authService.RegisterAsync(dto, 0);
+            if (!success) return BadRequest(new { message = "Registro fallido." });
+            return Ok(new { message = "Usuario registrado." });
         }
 
         [HttpPost("login")]

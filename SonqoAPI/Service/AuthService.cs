@@ -16,10 +16,16 @@ namespace SonqoAPI.Service
         IConfiguration configuration,
         IPasswordHasher<User> passwordHasher) : IAuthService
     {
-        public async Task<bool> RegisterAsync(RegisterDTO registerDto)
+        public async Task<bool> RegisterAsync(RegisterDTO registerDto, int roleIdActor = 0)
         {
-            var existingUsers = await userRepository.GetAllAsync(u => u.Username.Equals(registerDto.Username, StringComparison.CurrentCultureIgnoreCase));
-            if (existingUsers.Any()) return false;
+            if (registerDto.Role == 99 && roleIdActor != 99)
+            {
+                return false;
+            }
+
+            var usernameLower = registerDto.Username.ToLower();
+            var exists = await userRepository.ExistsAsync(u => u.Username.ToLower() == usernameLower);
+            if (exists) return false;
 
             Role parsedRole = Enum.IsDefined(typeof(Role), registerDto.Role)
                               ? (Role)registerDto.Role
@@ -105,8 +111,9 @@ namespace SonqoAPI.Service
 
         public async Task<UserResponseDTO?> CreateUserAsync(UserCreateDTO dto, int adminRestaurantId, string adminRole)
         {
-            var existingUsers = await userRepository.GetAllAsync(u => u.Username.Equals(dto.Username, StringComparison.CurrentCultureIgnoreCase));
-            if (existingUsers.Any()) return null;
+            var usernameLower = dto.Username!.ToLower();
+            var exists = await userRepository.ExistsAsync(u => u.Username.ToLower() == usernameLower);
+            if (exists) return null;
 
             if (!Enum.TryParse<Role>(dto.Role, out var roleEnum))
             {
@@ -139,17 +146,23 @@ namespace SonqoAPI.Service
             var user = await userRepository.GetByIdAsync(id);
             if (user == null || !user.IsActive || user.RestaurantId != adminRestaurantId) return false;
 
+            if (user.Role == Role.SuperAdmin && adminRole != "SuperAdmin")
+            {
+                return false;
+            }
+
             if (Enum.TryParse<Role>(dto.Role, out var roleEnum))
             {
-                if ((roleEnum == Role.SuperAdmin || user.Role == Role.SuperAdmin) && adminRole != "SuperAdmin")
+                if (roleEnum == Role.SuperAdmin && adminRole != "SuperAdmin")
                 {
                     return false;
                 }
                 user.Role = roleEnum;
             }
 
-            var existingUsers = await userRepository.GetAllAsync(u => u.Username.Equals(dto.Username, StringComparison.OrdinalIgnoreCase) && u.Id != id);
-            if (existingUsers.Any()) return false;
+            var usernameLower = dto.Username!.ToLower();
+            var exists = await userRepository.ExistsAsync(u => u.Username.ToLower() == usernameLower && u.Id != id);
+            if (exists) return false;
 
             user.Username = dto.Username!;
 
@@ -163,10 +176,12 @@ namespace SonqoAPI.Service
             return true;
         }
 
-        public async Task<bool> DeleteUserAsync(int id, int restaurantId)
+        public async Task<bool> DeleteUserAsync(int id, int restaurantId, string adminRole)
         {
             var user = await userRepository.GetByIdAsync(id);
             if (user == null || user.RestaurantId != restaurantId) return false;
+
+            if (user.Role == Role.SuperAdmin && adminRole != "SuperAdmin") return false;
 
             if (user.Username.Equals("admin", StringComparison.CurrentCultureIgnoreCase)) return false;
 
