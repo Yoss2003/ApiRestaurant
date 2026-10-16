@@ -41,9 +41,8 @@ namespace SonqoAPI.Service
             if (currentOpen == null) return false;
 
             var cashPaymentsTotal = await paymentRepository.GetQueryable()
-                .Where(p => p.PaymentDate >= currentOpen.OpenedAt &&
-                            p.PaymentMethodId == 1 &&
-                            p.Order!.RestaurantId == restaurantId)
+                .Where(p => p.CashRegisterId == currentOpen.Id &&
+                            p.PaymentMethodId == 1)
                 .SumAsync(p => (decimal?)p.Amount) ?? 0m;
 
             decimal expectedCashBalance = currentOpen.OpeningBalance + cashPaymentsTotal;

@@ -238,6 +238,9 @@ namespace SonqoAPI.Migrations
                     b.Property<decimal>("Amount")
                         .HasColumnType("decimal(18,2)");
 
+                    b.Property<int>("CashRegisterId")
+                        .HasColumnType("integer");
+
                     b.Property<int>("OrderId")
                         .HasColumnType("integer");
 
@@ -251,11 +254,18 @@ namespace SonqoAPI.Migrations
                         .HasMaxLength(100)
                         .HasColumnType("character varying(100)");
 
+                    b.Property<int>("UserId")
+                        .HasColumnType("integer");
+
                     b.HasKey("Id");
+
+                    b.HasIndex("CashRegisterId");
 
                     b.HasIndex("OrderId");
 
                     b.HasIndex("PaymentMethodId");
+
+                    b.HasIndex("UserId");
 
                     b.ToTable("pagos", (string)null);
                 });
@@ -534,6 +544,12 @@ namespace SonqoAPI.Migrations
 
             modelBuilder.Entity("SonqoAPI.Models.Payment", b =>
                 {
+                    b.HasOne("SonqoAPI.Models.CashRegister", "CashRegister")
+                        .WithMany()
+                        .HasForeignKey("CashRegisterId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
                     b.HasOne("SonqoAPI.Models.Order", "Order")
                         .WithMany("Payments")
                         .HasForeignKey("OrderId")
@@ -546,9 +562,19 @@ namespace SonqoAPI.Migrations
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
+                    b.HasOne("SonqoAPI.Models.User", "User")
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("CashRegister");
+
                     b.Navigation("Order");
 
                     b.Navigation("PaymentMethod");
+
+                    b.Navigation("User");
                 });
 
             modelBuilder.Entity("SonqoAPI.Models.RecipeDetails", b =>

@@ -319,23 +319,46 @@ namespace SonqoAPI.Service
                     return false;
                 }
 
+                var activeMethods = await paymentMethodRepository.GetAllAsync(m => m.IsActive);
+                var activeMethodIds = activeMethods.Select(m => m.Id).ToList();
+
+                bool isSplitPayment = paymentData.SplitPayments != null && paymentData.SplitPayments.Any();
+
+                if (isSplitPayment)
+                {
+                    if (paymentData.SplitPayments!.Any(sp => !activeMethodIds.Contains(sp.PaymentMethodId)))
+                    {
+                        await transaction.RollbackAsync();
+                        return false;
+                    }
+                }
+                else
+                {
+                    if (!activeMethodIds.Contains(paymentData.PrimaryPaymentMethodId))
+                    {
+                        await transaction.RollbackAsync();
+                        return false;
+                    }
+                }
+
                 decimal calculatedTotal = order.OrderDetails.Sum(d => Math.Round(d.SubTotal, 2, MidpointRounding.AwayFromZero));
                 order.TotalAmount = calculatedTotal;
 
                 decimal amountAlreadyPaid = order.Payments.Sum(p => Math.Round(p.Amount, 2, MidpointRounding.AwayFromZero));
                 decimal remainingBalance = calculatedTotal - amountAlreadyPaid;
-                decimal incomingPaymentTotal = paymentData.SplitPayments?.Sum(p => Math.Round(p.Amount, 2, MidpointRounding.AwayFromZero))
-                                               ?? Math.Round(paymentData.TotalAmountPaid, 2, MidpointRounding.AwayFromZero);
+                decimal incomingPaymentTotal = isSplitPayment
+                    ? paymentData.SplitPayments!.Sum(p => Math.Round(p.Amount, 2, MidpointRounding.AwayFromZero))
+                    : Math.Round(paymentData.TotalAmountPaid, 2, MidpointRounding.AwayFromZero);
 
-                if (Math.Abs(incomingPaymentTotal - remainingBalance) > 0.01m)
+                if (incomingPaymentTotal != remainingBalance)
                 {
                     await transaction.RollbackAsync();
                     return false;
                 }
 
-                if (paymentData.SplitPayments != null && paymentData.SplitPayments.Count > 0)
+                if (isSplitPayment)
                 {
-                    foreach (var split in paymentData.SplitPayments)
+                    foreach (var split in paymentData.SplitPayments!)
                     {
                         if (split.Amount <= 0) continue;
                         order.Payments.Add(new Payment
