@@ -21,5 +21,11 @@ namespace SonqoAPI.Models
 
         [MaxLength(100)]
         public string? ReferenceNumber { get; set; }
+
+        public int CashRegisterId { get; set; }
+        public CashRegister? CashRegister { get; set; }
+
+        public int UserId { get; set; }
+        public User? User { get; set; }
     }
 }

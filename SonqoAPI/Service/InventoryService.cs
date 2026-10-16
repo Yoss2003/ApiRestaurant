@@ -33,12 +33,18 @@ namespace SonqoAPI.Service
             foreach (var plannedItem in planning)
             {
                 var dishIngredients = recipes.Where(r => r.DishId == plannedItem.DishId).ToList();
+
+                var dish = validDishes.FirstOrDefault(d => d.Id == plannedItem.DishId);
+                int portions = (dish != null && dish.YieldPortions > 0) ? dish.YieldPortions : 1;
+
                 foreach (var recipeDetail in dishIngredients)
                 {
                     if (recipeDetail.Ingredient == null || recipeDetail.Ingredient.RestaurantId != restaurantId) continue;
 
                     var ingredientId = recipeDetail.IngredientId;
-                    var requiredQuantity = recipeDetail.RequiredQuantity * plannedItem.PlannedQuantity;
+
+                    decimal requiredPerPlate = recipeDetail.RequiredQuantity / portions;
+                    decimal requiredQuantity = requiredPerPlate * plannedItem.PlannedQuantity;
 
                     if (totalIngredients.TryGetValue(ingredientId, out CalculatedIngredientDTO? value))
                     {
@@ -59,9 +65,9 @@ namespace SonqoAPI.Service
             }
 
             return [.. totalIngredients.Values.Select(i => {
-                i.SufficientStock = i.CurrentStock >= i.TotalQuantityRequired;
-                return i;
-            })];
+        i.SufficientStock = i.CurrentStock >= i.TotalQuantityRequired;
+        return i;
+    })];
         }
 
         public async Task<bool> UpdateIngredientAsync(int id, IngredientCreateDTO dto, int restaurantId)

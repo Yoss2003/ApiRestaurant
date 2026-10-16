@@ -30,7 +30,13 @@ builder.Services.AddSignalR();
 
 // RA40: Valores por defecto coherentes para el JWT
 var jwtSettings = builder.Configuration.GetSection("JwtSettings");
-var secretKey = jwtSettings["SecretKey"] ?? "ClaveDeRespaldoSeguraParaDesarrollo2026*!";
+var secretKey = jwtSettings["SecretKey"];
+
+if (string.IsNullOrEmpty(secretKey) || secretKey.Length < 16)
+{
+    throw new InvalidOperationException("CRÍTICO: No se ha configurado un JwtSettings:SecretKey válido en el entorno.");
+}
+
 var issuer = jwtSettings["Issuer"] ?? "SonqoAPI";
 var audience = jwtSettings["Audience"] ?? "SonqoAdmin";
 

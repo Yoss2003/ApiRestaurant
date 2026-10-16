@@ -21,6 +21,12 @@ namespace SonqoAPI.Controllers
             return claim != null && int.TryParse(claim.Value, out int id) ? id : 0;
         }
 
+        private int GetCurrentUserId()
+        {
+            var claim = User.Claims.FirstOrDefault(c => c.Type == ClaimTypes.NameIdentifier);
+            return claim != null && int.TryParse(claim.Value, out int id) ? id : 0;
+        }
+
         [HttpPost]
         [AllowAnonymous]
         [EnableRateLimiting("OrderLimit")]
@@ -77,9 +83,12 @@ namespace SonqoAPI.Controllers
         public async Task<IActionResult> PayOrder(int orderId, [FromBody] PayOrderDTO paymentData)
         {
             int restaurantId = GetCurrentRestaurantId();
-            var success = await orderService.PayOrderAsync(orderId, paymentData, restaurantId);
+            int userId = GetCurrentUserId();
+
+            var success = await orderService.PayOrderAsync(orderId, paymentData, restaurantId, userId);
+
             if (!success)
-                return BadRequest(new { message = "No se pudo cobrar. Verifique orden y estado de caja." });
+                return BadRequest(new { message = "No se pudo cobrar. Verifique orden, concurrencia y estado de caja." });
 
             return Ok(new { message = "Orden cobrada y mesa liberada exitosamente." });
         }

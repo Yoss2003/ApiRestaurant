@@ -10,7 +10,7 @@ namespace SonqoAPI.Controllers
 {
     [Route("api/[controller]")]
     [ApiController]
-    [Authorize]
+    [Authorize(Policy = "RequireStaff")]
     public class InventoryController(IInventoryService inventoryService) : ControllerBase
     {
         private int GetCurrentRestaurantId()
@@ -38,6 +38,7 @@ namespace SonqoAPI.Controllers
         }
 
         [HttpPut("ingredients/{id}")]
+        [Authorize(Policy = "RequireAdmin")]
         public async Task<IActionResult> UpdateIngredient(int id, [FromBody] IngredientCreateDTO dto)
         {
             int restaurantId = GetCurrentRestaurantId();
@@ -47,6 +48,7 @@ namespace SonqoAPI.Controllers
         }
 
         [HttpDelete("ingredients/{id}")]
+        [Authorize(Policy = "RequireAdmin")]
         public async Task<IActionResult> DeleteIngredient(int id)
         {
             int restaurantId = GetCurrentRestaurantId();
@@ -56,8 +58,14 @@ namespace SonqoAPI.Controllers
         }
 
         [HttpPost("seed-test-data")]
+        [Authorize(Policy = "RequireAdmin")]
         public async Task<IActionResult> SeedTestData()
         {
+            var env = HttpContext.RequestServices.GetRequiredService<IWebHostEnvironment>();
+            if (!env.IsDevelopment())
+            {
+                return Forbid("El sembrado de datos está deshabilitado en entornos de producción.");
+            }
             int restaurantId = GetCurrentRestaurantId();
             var success = await inventoryService.SeedTestDataAsync(restaurantId);
             if (!success)
@@ -76,6 +84,7 @@ namespace SonqoAPI.Controllers
         }
 
         [HttpPost("ingredients")]
+        [Authorize(Policy = "RequireAdmin")]
         public async Task<IActionResult> CreateIngredient([FromBody] IngredientCreateDTO dto)
         {
             int restaurantId = GetCurrentRestaurantId();
@@ -84,6 +93,7 @@ namespace SonqoAPI.Controllers
         }
 
         [HttpPost("ingredients/restock")]
+        [Authorize(Policy = "RequireKitchen")]
         public async Task<IActionResult> RestockIngredient([FromBody] RestockDTO dto)
         {
             int restaurantId = GetCurrentRestaurantId();

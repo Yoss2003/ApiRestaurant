@@ -68,6 +68,12 @@ namespace SonqoAPI.Service
                 }
             }
 
+            var requestedDishIds = orderDto.Items.Select(i => i.DishId).Distinct().Count();
+            if (validDishes.Count != requestedDishIds)
+            {
+                return false;
+            }
+
             foreach (var kvp in requiredIngredients)
             {
                 var ing = ingredients.FirstOrDefault(i => i.Id == kvp.Key);
@@ -287,16 +293,20 @@ namespace SonqoAPI.Service
             return dto;
         }
 
-        public async Task<bool> PayOrderAsync(int orderId, PayOrderDTO paymentData, int restaurantId)
+        public async Task<bool> PayOrderAsync(int orderId, PayOrderDTO paymentData, int restaurantId, int userId)
         {
-            var openRegister = await cashRegisterRepository.GetQueryable()
-                .FirstOrDefaultAsync(c => c.RestaurantId == restaurantId && c.IsOpen);
-
-            if (openRegister == null) return false;
-
-            using var transaction = await orderRepository.BeginTransactionAsync();
+            using var transaction = await orderRepository.BeginTransactionAsync(System.Data.IsolationLevel.Serializable);
             try
             {
+                var openRegister = await cashRegisterRepository.GetQueryable()
+                    .FirstOrDefaultAsync(c => c.RestaurantId == restaurantId && c.IsOpen);
+
+                if (openRegister == null)
+                {
+                    await transaction.RollbackAsync();
+                    return false;
+                }
+
                 var order = await orderRepository.GetQueryable()
                     .Include(o => o.OrderDetails)
                     .Include(o => o.Table)
@@ -314,17 +324,8 @@ namespace SonqoAPI.Service
 
                 decimal amountAlreadyPaid = order.Payments.Sum(p => Math.Round(p.Amount, 2, MidpointRounding.AwayFromZero));
                 decimal remainingBalance = calculatedTotal - amountAlreadyPaid;
-
-                decimal incomingPaymentTotal = 0;
-
-                if (paymentData.SplitPayments != null && paymentData.SplitPayments.Count > 0)
-                {
-                    incomingPaymentTotal = paymentData.SplitPayments.Sum(p => Math.Round(p.Amount, 2, MidpointRounding.AwayFromZero));
-                }
-                else
-                {
-                    incomingPaymentTotal = Math.Round(paymentData.TotalAmountPaid, 2, MidpointRounding.AwayFromZero);
-                }
+                decimal incomingPaymentTotal = paymentData.SplitPayments?.Sum(p => Math.Round(p.Amount, 2, MidpointRounding.AwayFromZero))
+                                               ?? Math.Round(paymentData.TotalAmountPaid, 2, MidpointRounding.AwayFromZero);
 
                 if (Math.Abs(incomingPaymentTotal - remainingBalance) > 0.01m)
                 {
@@ -342,22 +343,23 @@ namespace SonqoAPI.Service
                             OrderId = order.Id,
                             PaymentMethodId = split.PaymentMethodId,
                             Amount = Math.Round(split.Amount, 2, MidpointRounding.AwayFromZero),
-                            PaymentDate = DateTime.UtcNow
+                            PaymentDate = DateTime.UtcNow,
+                            CashRegisterId = openRegister.Id,
+                            UserId = userId
                         });
                     }
                 }
-                else
+                else if (paymentData.TotalAmountPaid > 0)
                 {
-                    if (paymentData.TotalAmountPaid > 0)
+                    order.Payments.Add(new Payment
                     {
-                        order.Payments.Add(new Payment
-                        {
-                            OrderId = order.Id,
-                            PaymentMethodId = paymentData.PrimaryPaymentMethodId,
-                            Amount = Math.Round(paymentData.TotalAmountPaid, 2, MidpointRounding.AwayFromZero),
-                            PaymentDate = DateTime.UtcNow
-                        });
-                    }
+                        OrderId = order.Id,
+                        PaymentMethodId = paymentData.PrimaryPaymentMethodId,
+                        Amount = Math.Round(paymentData.TotalAmountPaid, 2, MidpointRounding.AwayFromZero),
+                        PaymentDate = DateTime.UtcNow,
+                        CashRegisterId = openRegister.Id,
+                        UserId = userId
+                    });
                 }
 
                 order.Status = OrderStatus.Paid;
@@ -372,7 +374,12 @@ namespace SonqoAPI.Service
                 await orderRepository.SaveChangesAsync();
                 await tableRepository.SaveChangesAsync();
                 await transaction.CommitAsync();
-                await orderHub.Clients.Group(order.RestaurantId.ToString()).SendAsync("ReceiveOrderUpdate", new { orderId = order.Id, type = "ORDER_PAID" });
+
+                try
+                {
+                    await orderHub.Clients.Group(restaurantId.ToString()).SendAsync("ReceiveOrderUpdate", new { orderId = order.Id, type = "ORDER_PAID" });
+                }
+                catch { /* Ignoramos fallos de WebSocket para no mentirle al cajero sobre el pago exitoso */ }
 
                 return true;
             }
