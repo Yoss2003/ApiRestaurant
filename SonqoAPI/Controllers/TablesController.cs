@@ -2,6 +2,9 @@
 using Microsoft.AspNetCore.Mvc;
 using SonqoAPI.Models.DTOs;
 using SonqoAPI.Service.IService;
+using System;
+using System.Linq;
+using System.Threading.Tasks;
 
 namespace SonqoAPI.Controllers
 {
@@ -10,10 +13,17 @@ namespace SonqoAPI.Controllers
     [Authorize(Policy = "RequireStaff")]
     public class TablesController(ITableService tableService) : ControllerBase
     {
+        private int GetCurrentRestaurantId()
+        {
+            var claim = User.Claims.FirstOrDefault(c => c.Type == "RestaurantId");
+            return claim != null && int.TryParse(claim.Value, out int id) ? id : 0;
+        }
+
         [HttpGet]
         public async Task<IActionResult> GetAllTables()
         {
-            var tables = await tableService.GetAllActiveTablesAsync();
+            int restaurantId = GetCurrentRestaurantId();
+            var tables = await tableService.GetAllActiveTablesAsync(restaurantId);
             return Ok(tables);
         }
 
@@ -24,7 +34,8 @@ namespace SonqoAPI.Controllers
             if (string.IsNullOrWhiteSpace(dto.Number))
                 return BadRequest("El número o nombre de la mesa es obligatorio.");
 
-            var newTable = await tableService.CreateTableAsync(dto);
+            int restaurantId = GetCurrentRestaurantId();
+            var newTable = await tableService.CreateTableAsync(dto, restaurantId);
             return Ok(new { Message = "Mesa creada exitosamente.", Table = newTable });
         }
 
@@ -35,8 +46,8 @@ namespace SonqoAPI.Controllers
             if (string.IsNullOrWhiteSpace(dto.Number))
                 return BadRequest("El número o nombre de la mesa es obligatorio.");
 
-            var updatedTable = await tableService.UpdateTableAsync(id, dto);
-
+            int restaurantId = GetCurrentRestaurantId();
+            var updatedTable = await tableService.UpdateTableAsync(id, dto, restaurantId);
             if (updatedTable == null)
                 return NotFound("La mesa no existe o fue eliminada.");
 
@@ -49,7 +60,8 @@ namespace SonqoAPI.Controllers
         {
             try
             {
-                var success = await tableService.DeleteTableAsync(id);
+                int restaurantId = GetCurrentRestaurantId();
+                var success = await tableService.DeleteTableAsync(id, restaurantId);
                 if (!success)
                     return NotFound("La mesa no existe o ya fue eliminada.");
 

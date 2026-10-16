@@ -13,6 +13,8 @@ namespace SonqoAPI.Models
 
         // Total a pagar por este pedido
         public decimal TotalAmount { get; set; }
+        public int RestaurantId { get; set; }
+        public Restaurant? Restaurant { get; set; }
         public OrderStatus Status { get; set; } = OrderStatus.Pending;
 
         // Relación: Un pedido tiene muchos productos (detalles)

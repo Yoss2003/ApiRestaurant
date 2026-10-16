@@ -22,6 +22,50 @@ namespace SonqoAPI.Migrations
 
             NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
 
+            modelBuilder.Entity("SonqoAPI.Models.CashRegister", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<DateTime?>("ClosedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<decimal?>("ClosingBalance")
+                        .HasColumnType("decimal(18,2)");
+
+                    b.Property<decimal?>("Discrepancy")
+                        .HasColumnType("decimal(18,2)");
+
+                    b.Property<bool>("IsOpen")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("Notes")
+                        .HasColumnType("text");
+
+                    b.Property<DateTime>("OpenedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<decimal>("OpeningBalance")
+                        .HasColumnType("decimal(18,2)");
+
+                    b.Property<int>("RestaurantId")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("UserId")
+                        .HasColumnType("integer");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("RestaurantId");
+
+                    b.HasIndex("UserId");
+
+                    b.ToTable("CashRegisters");
+                });
+
             modelBuilder.Entity("SonqoAPI.Models.Dish", b =>
                 {
                     b.Property<int>("Id")
@@ -44,10 +88,15 @@ namespace SonqoAPI.Migrations
                     b.Property<decimal>("Price")
                         .HasColumnType("numeric");
 
+                    b.Property<int>("RestaurantId")
+                        .HasColumnType("integer");
+
                     b.Property<int>("YieldPortions")
                         .HasColumnType("integer");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("RestaurantId");
 
                     b.ToTable("platos", (string)null);
                 });
@@ -86,6 +135,9 @@ namespace SonqoAPI.Migrations
                         .HasMaxLength(100)
                         .HasColumnType("character varying(100)");
 
+                    b.Property<int>("RestaurantId")
+                        .HasColumnType("integer");
+
                     b.Property<decimal>("UnitCost")
                         .HasColumnType("decimal(18,3)");
 
@@ -95,6 +147,8 @@ namespace SonqoAPI.Migrations
                         .HasColumnType("character varying(20)");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("RestaurantId");
 
                     b.ToTable("ingredientes", (string)null);
                 });
@@ -110,6 +164,9 @@ namespace SonqoAPI.Migrations
                     b.Property<DateTime>("OrderDate")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<int>("RestaurantId")
+                        .HasColumnType("integer");
+
                     b.Property<int>("Status")
                         .HasColumnType("integer");
 
@@ -120,6 +177,8 @@ namespace SonqoAPI.Migrations
                         .HasColumnType("numeric");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("RestaurantId");
 
                     b.HasIndex("TableId");
 
@@ -272,6 +331,65 @@ namespace SonqoAPI.Migrations
                     b.ToTable("receta_detalles", (string)null);
                 });
 
+            modelBuilder.Entity("SonqoAPI.Models.Restaurant", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("Address")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<string>("Ruc")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("Restaurants");
+                });
+
+            modelBuilder.Entity("SonqoAPI.Models.RestaurantSettings", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("Address")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<string>("Ruc")
+                        .IsRequired()
+                        .HasMaxLength(20)
+                        .HasColumnType("character varying(20)");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("RestaurantSettings");
+                });
+
             modelBuilder.Entity("SonqoAPI.Models.Table", b =>
                 {
                     b.Property<int>("Id")
@@ -293,7 +411,12 @@ namespace SonqoAPI.Migrations
                         .IsRequired()
                         .HasColumnType("text");
 
+                    b.Property<int>("RestaurantId")
+                        .HasColumnType("integer");
+
                     b.HasKey("Id");
+
+                    b.HasIndex("RestaurantId");
 
                     b.ToTable("mesas", (string)null);
                 });
@@ -325,16 +448,67 @@ namespace SonqoAPI.Migrations
 
                     b.HasKey("Id");
 
+                    b.HasIndex("RestaurantId");
+
                     b.ToTable("usuarios", (string)null);
+                });
+
+            modelBuilder.Entity("SonqoAPI.Models.CashRegister", b =>
+                {
+                    b.HasOne("SonqoAPI.Models.Restaurant", "Restaurant")
+                        .WithMany("CashRegisters")
+                        .HasForeignKey("RestaurantId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("SonqoAPI.Models.User", "User")
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Restaurant");
+
+                    b.Navigation("User");
+                });
+
+            modelBuilder.Entity("SonqoAPI.Models.Dish", b =>
+                {
+                    b.HasOne("SonqoAPI.Models.Restaurant", "Restaurant")
+                        .WithMany("Dishes")
+                        .HasForeignKey("RestaurantId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Restaurant");
+                });
+
+            modelBuilder.Entity("SonqoAPI.Models.Ingredient", b =>
+                {
+                    b.HasOne("SonqoAPI.Models.Restaurant", "Restaurant")
+                        .WithMany("Ingredients")
+                        .HasForeignKey("RestaurantId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Restaurant");
                 });
 
             modelBuilder.Entity("SonqoAPI.Models.Order", b =>
                 {
+                    b.HasOne("SonqoAPI.Models.Restaurant", "Restaurant")
+                        .WithMany("Orders")
+                        .HasForeignKey("RestaurantId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
                     b.HasOne("SonqoAPI.Models.Table", "Table")
                         .WithMany("Orders")
                         .HasForeignKey("TableId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
+
+                    b.Navigation("Restaurant");
 
                     b.Navigation("Table");
                 });
@@ -396,6 +570,26 @@ namespace SonqoAPI.Migrations
                     b.Navigation("Ingredient");
                 });
 
+            modelBuilder.Entity("SonqoAPI.Models.Table", b =>
+                {
+                    b.HasOne("SonqoAPI.Models.Restaurant", "Restaurant")
+                        .WithMany("Tables")
+                        .HasForeignKey("RestaurantId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Restaurant");
+                });
+
+            modelBuilder.Entity("SonqoAPI.Models.User", b =>
+                {
+                    b.HasOne("SonqoAPI.Models.Restaurant", "Restaurant")
+                        .WithMany("Users")
+                        .HasForeignKey("RestaurantId");
+
+                    b.Navigation("Restaurant");
+                });
+
             modelBuilder.Entity("SonqoAPI.Models.Dish", b =>
                 {
                     b.Navigation("Recipe");
@@ -416,6 +610,21 @@ namespace SonqoAPI.Migrations
             modelBuilder.Entity("SonqoAPI.Models.PaymentMethod", b =>
                 {
                     b.Navigation("Payments");
+                });
+
+            modelBuilder.Entity("SonqoAPI.Models.Restaurant", b =>
+                {
+                    b.Navigation("CashRegisters");
+
+                    b.Navigation("Dishes");
+
+                    b.Navigation("Ingredients");
+
+                    b.Navigation("Orders");
+
+                    b.Navigation("Tables");
+
+                    b.Navigation("Users");
                 });
 
             modelBuilder.Entity("SonqoAPI.Models.Table", b =>

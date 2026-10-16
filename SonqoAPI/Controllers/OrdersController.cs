@@ -1,10 +1,13 @@
 ﻿using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.AspNetCore.SignalR;
 using Microsoft.AspNetCore.RateLimiting;
+using Microsoft.AspNetCore.SignalR;
 using SonqoAPI.Hubs;
 using SonqoAPI.Models.DTOs;
 using SonqoAPI.Service.IService;
+using System.Linq;
+using System.Security.Claims;
+using System.Threading.Tasks;
 
 namespace SonqoAPI.Controllers
 {
@@ -15,62 +18,66 @@ namespace SonqoAPI.Controllers
         IOrderService orderService,
         IHubContext<OrderHub> hubContext) : ControllerBase
     {
+        private int GetCurrentRestaurantId()
+        {
+            var claim = User.Claims.FirstOrDefault(c => c.Type == "RestaurantId");
+            return claim != null && int.TryParse(claim.Value, out int id) ? id : 0;
+        }
 
         [HttpPost]
         [AllowAnonymous]
         [EnableRateLimiting("OrderLimit")]
         public async Task<IActionResult> CreateOrder([FromBody] OrderCreateDTO orderDto)
         {
-            var success = await orderService.CreateOrderAsync(orderDto);
-
+            int restaurantId = GetCurrentRestaurantId();
+            var success = await orderService.CreateOrderAsync(orderDto, restaurantId);
             if (!success)
-            {
-                return BadRequest(new { message = "No se pudo procesar el pedido. Verifique que la mesa exista y los platos estén disponibles." });
-            }
+                return BadRequest(new { message = "No se pudo procesar el pedido. Verifique stock y mesa." });
 
             await hubContext.Clients.All.SendAsync("ReceiveOrderUpdate", "ORDER_CREATED");
-
             return Ok(new { message = "Pedido creado exitosamente." });
         }
 
         [HttpPatch("details/{detailId}/status")]
-        [Authorize(Policy = "RequireKitchen")]
-        public async Task<IActionResult> UpdateDetailStatus(int detailId, [FromBody] StatusUpdateDTO dto)
+        [Authorize(Policy = "RequireStaff")]
+        public async Task<IActionResult> UpdateOrderDetailStatus(int detailId, [FromBody] StatusUpdateDTO statusDto)
         {
-            var success = await orderService.UpdateOrderDetailStatusAsync(detailId, dto.Status);
+            string userRole = User.Claims.FirstOrDefault(c => c.Type == ClaimTypes.Role)?.Value ?? "Client";
+            int restaurantId = GetCurrentRestaurantId();
 
-            if (!success) return NotFound("No se pudo actualizar el estado del plato.");
+            var success = await orderService.UpdateOrderDetailStatusAsync(detailId, statusDto.Status, userRole, restaurantId);
+            if (!success)
+                return BadRequest(new { message = "Transición inválida o rol no autorizado." });
 
-            await hubContext.Clients.All.SendAsync("ReceiveOrderUpdate", "STATUS_UPDATED");
-
-            return Ok(new { Message = "Estado actualizado correctamente." });
+            return Ok(new { message = "Estado actualizado correctamente." });
         }
 
         [HttpGet("kitchen")]
         [Authorize(Policy = "RequireKitchen")]
         public async Task<IActionResult> GetKitchenOrders()
         {
-            var orders = await orderService.GetKitchenOrdersAsync();
+            int restaurantId = GetCurrentRestaurantId();
+            var orders = await orderService.GetKitchenOrdersAsync(restaurantId);
             return Ok(orders);
         }
 
         [HttpGet("table/{tableId}/active")]
         public async Task<IActionResult> GetActiveOrder(int tableId)
         {
-            var order = await orderService.GetActiveOrderAsync(tableId);
+            int restaurantId = GetCurrentRestaurantId();
+            var order = await orderService.GetActiveOrderAsync(tableId, restaurantId);
             if (order == null) return NoContent();
             return Ok(order);
         }
 
-        [HttpPost("table/{tableId}/pay")]
-        public async Task<IActionResult> PayOrder(int tableId, [FromBody] PayOrderDTO paymentData)
+        [HttpPost("{orderId}/pay")]
+        [Authorize(Policy = "RequireStaff")]
+        public async Task<IActionResult> PayOrder(int orderId, [FromBody] PayOrderDTO paymentData)
         {
-            var success = await orderService.PayOrderAsync(tableId, paymentData);
-
+            int restaurantId = GetCurrentRestaurantId();
+            var success = await orderService.PayOrderAsync(orderId, paymentData, restaurantId);
             if (!success)
-                return BadRequest(new { message = "No se pudo cobrar la orden. Verifique que exista una orden activa." });
-
-            await hubContext.Clients.All.SendAsync("ReceiveOrderUpdate", "ORDER_PAID");
+                return BadRequest(new { message = "No se pudo cobrar. Verifique orden y estado de caja." });
 
             return Ok(new { message = "Orden cobrada y mesa liberada exitosamente." });
         }
@@ -79,7 +86,8 @@ namespace SonqoAPI.Controllers
         [Authorize(Policy = "RequireAdmin")]
         public async Task<IActionResult> GetDashboardMetrics()
         {
-            var metrics = await orderService.GetDashboardMetricsAsync();
+            int restaurantId = GetCurrentRestaurantId();
+            var metrics = await orderService.GetDashboardMetricsAsync(restaurantId);
             return Ok(metrics);
         }
     }

@@ -85,5 +85,79 @@ namespace SonqoAPI.Service
 
             return tokenHandler.WriteToken(token);
         }
+
+        // --- MÉTODOS DEL CRUD DE USUARIOS (Con RestaurantId) ---
+
+        public async Task<IEnumerable<UserResponseDTO>> GetAllUsersAsync(int restaurantId)
+        {
+            var users = await userRepository.GetAllAsync(u => u.IsActive && u.RestaurantId == restaurantId);
+            return users.Select(u => new UserResponseDTO
+            {
+                Id = u.Id,
+                Username = u.Username,
+                Role = u.Role.ToString()
+            });
+        }
+
+        public async Task<UserResponseDTO?> CreateUserAsync(UserCreateDTO dto, int restaurantId)
+        {
+            var existingUsers = await userRepository.GetAllAsync(u => u.Username.Equals(dto.Username, StringComparison.CurrentCultureIgnoreCase));
+            if (existingUsers.Any()) return null;
+
+            Role parsedRole = Enum.TryParse<Role>(dto.Role, out var roleEnum) ? roleEnum : Role.Kitchen;
+
+            var newUser = new User
+            {
+                Username = dto.Username!,
+                Role = parsedRole,
+                IsActive = true,
+                RestaurantId = restaurantId // Asignamos el local del admin actual
+            };
+
+            newUser.PasswordHash = passwordHasher.HashPassword(newUser, dto.Password!);
+
+            await userRepository.AddAsync(newUser);
+            await userRepository.SaveChangesAsync();
+
+            return new UserResponseDTO { Id = newUser.Id, Username = newUser.Username, Role = newUser.Role.ToString() };
+        }
+
+        public async Task<bool> UpdateUserAsync(int id, UserUpdateDTO dto, int restaurantId)
+        {
+            var user = await userRepository.GetByIdAsync(id);
+            if (user == null || !user.IsActive || user.RestaurantId != restaurantId) return false;
+
+            var existingUsers = await userRepository.GetAllAsync(u => u.Username.Equals(dto.Username, StringComparison.CurrentCultureIgnoreCase) && u.Id != id);
+            if (existingUsers.Any()) return false;
+
+            user.Username = dto.Username!;
+
+            if (Enum.TryParse<Role>(dto.Role, out var roleEnum))
+            {
+                user.Role = roleEnum;
+            }
+
+            if (!string.IsNullOrWhiteSpace(dto.Password))
+            {
+                user.PasswordHash = passwordHasher.HashPassword(user, dto.Password);
+            }
+
+            userRepository.Update(user);
+            await userRepository.SaveChangesAsync();
+            return true;
+        }
+
+        public async Task<bool> DeleteUserAsync(int id, int restaurantId)
+        {
+            var user = await userRepository.GetByIdAsync(id);
+            if (user == null || user.RestaurantId != restaurantId) return false;
+
+            if (user.Username.Equals("admin", StringComparison.CurrentCultureIgnoreCase)) return false;
+
+            user.IsActive = false;
+            userRepository.Update(user);
+            await userRepository.SaveChangesAsync();
+            return true;
+        }
     }
 }

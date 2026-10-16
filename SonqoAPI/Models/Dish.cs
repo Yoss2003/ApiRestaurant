@@ -8,6 +8,8 @@
         public decimal Price { get; set; }
         public bool IsAvailable { get; set; }
         public int YieldPortions { get; set; } = 1;
+        public int RestaurantId { get; set; }
+        public Restaurant? Restaurant { get; set; }
 
         public ICollection<RecipeDetails> Recipe { get; set; } = [];
     }

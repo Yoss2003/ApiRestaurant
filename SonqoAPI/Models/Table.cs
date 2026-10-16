@@ -7,6 +7,8 @@
         public int Capacity { get; set; }
         public bool IsAvailable { get; set; } = true;
         public bool IsDeleted { get; set; } = false;
+        public int RestaurantId { get; set; }
+        public Restaurant? Restaurant { get; set; }
 
         // Relación: Una mesa puede tener un pedido activo (o historial de pedidos)
         public ICollection<Order> Orders { get; set; } = [];

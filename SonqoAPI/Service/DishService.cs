@@ -4,6 +4,9 @@ using SonqoAPI.Models;
 using SonqoAPI.Models.DTOs;
 using SonqoAPI.Repositories.IRepositories;
 using SonqoAPI.Service.IService;
+using System.Collections.Generic;
+using System.Linq;
+using System.Threading.Tasks;
 
 namespace SonqoAPI.Service
 {
@@ -13,20 +16,18 @@ namespace SonqoAPI.Service
         IGenericRepository<Ingredient> ingredientRepository) : IDishService
     {
         // 1. OBTENEMOS LOS PLATOS Y CALCULAMOS SU COSTO AL VUELO
-        public async Task<IEnumerable<DishResponseDTO>> GetAllActiveDishesAsync()
+        public async Task<IEnumerable<DishResponseDTO>> GetAllActiveDishesAsync(int restaurantId)
         {
-            var dishes = await dishRepository.GetAllAsync(d => d.IsAvailable);
-            var recipes = await recipeRepository.GetAllAsync();
-            var ingredients = await ingredientRepository.GetAllAsync();
+            var dishes = await dishRepository.GetAllAsync(d => d.IsAvailable && d.RestaurantId == restaurantId);
+            var recipes = await recipeRepository.GetAllAsync(); // Idealmente filtrar por RestaurantId si RecipeDetails lo tuviera
+            var ingredients = await ingredientRepository.GetAllAsync(i => i.RestaurantId == restaurantId);
 
             var responseList = new List<DishResponseDTO>();
-
             foreach (var dish in dishes)
             {
                 var dishRecipes = recipes.Where(r => r.DishId == dish.Id);
                 decimal totalCost = 0;
                 int maxAvailable = int.MaxValue;
-
                 if (!dishRecipes.Any()) maxAvailable = 0;
 
                 foreach (var detail in dishRecipes)
@@ -35,13 +36,11 @@ namespace SonqoAPI.Service
                     if (ing != null)
                     {
                         totalCost += detail.RequiredQuantity * ing.UnitCost;
-
                         if (detail.RequiredQuantity > 0)
                         {
                             int portions = dish.YieldPortions > 0 ? dish.YieldPortions : 1;
                             decimal requiredPerPlate = detail.RequiredQuantity / portions;
                             int possiblePlates = (int)Math.Floor(ing.CurrentStock / requiredPerPlate);
-
                             if (possiblePlates < maxAvailable)
                             {
                                 maxAvailable = possiblePlates;
@@ -49,9 +48,7 @@ namespace SonqoAPI.Service
                         }
                     }
                 }
-
                 if (maxAvailable == int.MaxValue) maxAvailable = 0;
-
                 decimal margin = dish.Price > 0 ? ((dish.Price - totalCost) / dish.Price) * 100m : 0m;
 
                 responseList.Add(new DishResponseDTO
@@ -66,22 +63,26 @@ namespace SonqoAPI.Service
                     MaxAvailable = maxAvailable
                 });
             }
-
             return responseList;
         }
 
-        public async Task<Dish?> GetDishByIdAsync(int id)
+        public async Task<Dish?> GetDishByIdAsync(int id, int restaurantId)
         {
-            return await dishRepository.GetByIdAsync(id);
+            var dish = await dishRepository.GetByIdAsync(id);
+            if (dish != null && dish.RestaurantId == restaurantId)
+            {
+                return dish;
+            }
+            return null;
         }
 
-        public async Task<AssignRecipeDTO?> GetRecipeByDishIdAsync(int dishId)
+        public async Task<AssignRecipeDTO?> GetRecipeByDishIdAsync(int dishId, int restaurantId)
         {
             var dish = await dishRepository.GetByIdAsync(dishId);
-            if (dish == null) return null;
+            if (dish == null || dish.RestaurantId != restaurantId) return null;
 
             var recipeDetails = await recipeRepository.GetAllAsync(r => r.DishId == dishId);
-            var ingredients = await ingredientRepository.GetAllAsync();
+            var ingredients = await ingredientRepository.GetAllAsync(i => i.RestaurantId == restaurantId);
 
             var recipeDto = new AssignRecipeDTO
             {
@@ -98,77 +99,68 @@ namespace SonqoAPI.Service
                     };
                 })]
             };
-
             return recipeDto;
         }
 
-        public async Task<Dish> CreateDishAsync(DishUpdateDTO dishDto)
+        public async Task<Dish> CreateDishAsync(DishUpdateDTO dishDto, int restaurantId)
         {
             var newDish = new Dish
             {
                 Name = dishDto.Name,
                 Category = dishDto.Category,
                 Price = dishDto.Price,
-                IsAvailable = true
+                IsAvailable = true,
+                RestaurantId = restaurantId
             };
-
             await dishRepository.AddAsync(newDish);
             await dishRepository.SaveChangesAsync();
-
             return newDish;
         }
 
-        public async Task<bool> UpdateDishAsync(int id, DishUpdateDTO dishDto)
+        public async Task<bool> UpdateDishAsync(int id, DishUpdateDTO dishDto, int restaurantId)
         {
             var dish = await dishRepository.GetByIdAsync(id);
-            if (dish == null || !dish.IsAvailable) return false;
+            if (dish == null || !dish.IsAvailable || dish.RestaurantId != restaurantId) return false;
 
             dish.Name = dishDto.Name;
             dish.Category = dishDto.Category;
             dish.Price = dishDto.Price;
-
             dishRepository.Update(dish);
             return await dishRepository.SaveChangesAsync();
         }
 
-        public async Task<bool> SoftDeleteDishAsync(int id)
+        public async Task<bool> SoftDeleteDishAsync(int id, int restaurantId)
         {
             var dish = await dishRepository.GetByIdAsync(id);
-            if (dish == null) return false;
+            if (dish == null || dish.RestaurantId != restaurantId) return false;
 
             dish.IsAvailable = false;
             dishRepository.Update(dish);
-
             return await dishRepository.SaveChangesAsync();
         }
 
-        // 2. CONVERTIMOS LA UNIDAD ANTES DE GUARDAR
-        public async Task<bool> AssignRecipeAsync(AssignRecipeDTO recipeDto)
+        public async Task<bool> AssignRecipeAsync(AssignRecipeDTO recipeDto, int restaurantId)
         {
             var dish = await dishRepository.GetByIdAsync(recipeDto.DishId);
-            if (dish == null) return false;
+            if (dish == null || dish.RestaurantId != restaurantId) return false;
 
-            // 1. Guardamos las porciones del plato
             dish.YieldPortions = recipeDto.YieldPortions > 0 ? recipeDto.YieldPortions : 1;
             dishRepository.Update(dish);
             await dishRepository.SaveChangesAsync();
 
-            // 2. Obtenemos y borramos la receta anterior
             var existingRecipe = await recipeRepository.GetAllAsync(r => r.DishId == recipeDto.DishId);
             foreach (var detail in existingRecipe)
             {
                 recipeRepository.Delete(detail);
             }
-
             await recipeRepository.SaveChangesAsync();
 
-            // 3. Agregamos los nuevos ingredientes limpios de conflictos
             foreach (var item in recipeDto.Items)
             {
                 decimal quantityPerPortion = item.TotalQuantity;
-
                 var ingredient = await ingredientRepository.GetByIdAsync(item.IngredientId);
-                if (ingredient == null) continue;
+                // Asegurarse de que el ingrediente pertenece al mismo restaurante
+                if (ingredient == null || ingredient.RestaurantId != restaurantId) continue;
 
                 decimal finalQuantity = UnitConverter.ConvertQuantityToBase(quantityPerPortion, item.Unit, ingredient.UnitOfMeasure);
                 finalQuantity = Math.Round(finalQuantity, 3);
@@ -179,32 +171,25 @@ namespace SonqoAPI.Service
                     IngredientId = item.IngredientId,
                     RequiredQuantity = finalQuantity
                 };
-
                 await recipeRepository.AddAsync(newDetail);
             }
-
-            // 4. Guardamos las nuevas inserciones exitosamente
             return await recipeRepository.SaveChangesAsync();
         }
 
-        public async Task<IEnumerable<ShoppingListItemDTO>> GetShoppingListAsync()
+        public async Task<IEnumerable<ShoppingListItemDTO>> GetShoppingListAsync(int restaurantId)
         {
-            var dishes = await dishRepository.GetAllAsync(d => d.IsAvailable);
+            var dishes = await dishRepository.GetAllAsync(d => d.IsAvailable && d.RestaurantId == restaurantId);
             var recipes = await recipeRepository.GetAllAsync();
-            var ingredients = await ingredientRepository.GetAllAsync();
+            var ingredients = await ingredientRepository.GetAllAsync(i => i.RestaurantId == restaurantId);
 
-            // Diccionario para acumular lo requerido globalmente por ingrediente
             var requiredMap = new Dictionary<int, decimal>();
-
             foreach (var dish in dishes)
             {
                 int portions = dish.YieldPortions > 0 ? dish.YieldPortions : 1;
                 var dishRecipes = recipes.Where(r => r.DishId == dish.Id);
-
                 foreach (var detail in dishRecipes)
                 {
                     decimal totalNeededForDish = detail.RequiredQuantity * portions;
-
                     if (requiredMap.ContainsKey(detail.IngredientId))
                     {
                         requiredMap[detail.IngredientId] += totalNeededForDish;
@@ -217,22 +202,18 @@ namespace SonqoAPI.Service
             }
 
             var shoppingList = new List<ShoppingListItemDTO>();
-
             foreach (var kvp in requiredMap)
             {
                 int ingredientId = kvp.Key;
                 decimal totalRequired = kvp.Value;
-
                 var ing = ingredients.FirstOrDefault(i => i.Id == ingredientId);
                 if (ing == null) continue;
 
                 decimal currentStock = ing.CurrentStock;
-
                 if (totalRequired > currentStock)
                 {
                     decimal missing = totalRequired - currentStock;
                     decimal unitCost = ing.UnitCost;
-
                     shoppingList.Add(new ShoppingListItemDTO
                     {
                         IngredientId = ing.Id,
@@ -245,7 +226,6 @@ namespace SonqoAPI.Service
                     });
                 }
             }
-
             return shoppingList;
         }
     }

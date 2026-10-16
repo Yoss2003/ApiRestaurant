@@ -8,11 +8,14 @@ namespace SonqoAPI.Data
         public DbSet<User> Users { get; set; }
         public DbSet<Dish> Dishes { get; set; }
         public DbSet<Ingredient> Ingredients { get; set; }
+        public DbSet<Restaurant> Restaurants { get; set; }
         public DbSet<RecipeDetails> RecipeDetails { get; set; }
+        public DbSet<RestaurantSettings> RestaurantSettings { get; set; }
 
         // Nuevos DbSets para Mesas y Pedidos
         public DbSet<Table> Tables { get; set; }
         public DbSet<Order> Orders { get; set; }
+        public DbSet<CashRegister> CashRegisters { get; set; }
         public DbSet<OrderDetail> OrderDetails { get; set; }
 
         // DbSets para Pagos

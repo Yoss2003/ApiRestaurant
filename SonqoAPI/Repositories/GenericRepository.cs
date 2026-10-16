@@ -68,5 +68,10 @@ namespace SonqoAPI.Repositories
             // Devuelve true si se afectó al menos una fila en la base de datos
             return await _context.SaveChangesAsync() > 0;
         }
+
+        public IQueryable<T> GetQueryable()
+        {
+            return _dbSet.AsQueryable();
+        }
     }
 }

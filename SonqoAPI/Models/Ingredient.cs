@@ -32,6 +32,9 @@ namespace SonqoAPI.Models
         public bool IsPerishable { get; set; }
         public bool IsActive { get; set; } = true;
 
+        public int RestaurantId { get; set; }
+        public Restaurant? Restaurant { get; set; }
+
         public DateTime? ExpirationDate { get; set; }
         public ICollection<RecipeDetails>? Recipe { get; set; }
     }

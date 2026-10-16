@@ -10,5 +10,6 @@ namespace SonqoAPI.Models
         public Role Role { get; set; }
         public bool IsActive { get; set; } = true;
         public int? RestaurantId { get; set; }
+        public Restaurant? Restaurant { get; set; }
     }
 }

@@ -3,6 +3,9 @@ using Microsoft.AspNetCore.Mvc;
 using SonqoAPI.Models;
 using SonqoAPI.Models.DTOs;
 using SonqoAPI.Service.IService;
+using System.Collections.Generic;
+using System.Linq;
+using System.Threading.Tasks;
 
 namespace SonqoAPI.Controllers
 {
@@ -11,11 +14,18 @@ namespace SonqoAPI.Controllers
     [Authorize]
     public class DishesController(IDishService dishService) : ControllerBase
     {
+        private int GetCurrentRestaurantId()
+        {
+            var claim = User.Claims.FirstOrDefault(c => c.Type == "RestaurantId");
+            return claim != null && int.TryParse(claim.Value, out int id) ? id : 0;
+        }
+
         [HttpGet]
         [AllowAnonymous]
         public async Task<ActionResult<IEnumerable<Dish>>> GetAll()
         {
-            var dishes = await dishService.GetAllActiveDishesAsync();
+            int restaurantId = GetCurrentRestaurantId();
+            var dishes = await dishService.GetAllActiveDishesAsync(restaurantId);
             return Ok(dishes);
         }
 
@@ -23,13 +33,12 @@ namespace SonqoAPI.Controllers
         [Authorize(Policy = "RequireKitchen")]
         public async Task<IActionResult> GetRecipe(int id)
         {
-            var recipe = await dishService.GetRecipeByDishIdAsync(id);
-
+            int restaurantId = GetCurrentRestaurantId();
+            var recipe = await dishService.GetRecipeByDishIdAsync(id, restaurantId);
             if (recipe == null)
             {
                 return Ok(new { dishId = id, yieldPortions = 1, items = Array.Empty<object>() });
             }
-
             return Ok(recipe);
         }
 
@@ -37,7 +46,8 @@ namespace SonqoAPI.Controllers
         [Authorize(Policy = "RequireKitchen")]
         public async Task<IActionResult> CreateDish([FromBody] DishUpdateDTO dishDto)
         {
-            var createdDish = await dishService.CreateDishAsync(dishDto);
+            int restaurantId = GetCurrentRestaurantId();
+            var createdDish = await dishService.CreateDishAsync(dishDto, restaurantId);
             return Ok(createdDish);
         }
 
@@ -45,7 +55,8 @@ namespace SonqoAPI.Controllers
         [Authorize(Policy = "RequireKitchen")]
         public async Task<IActionResult> Update(int id, [FromBody] DishUpdateDTO dishDto)
         {
-            var success = await dishService.UpdateDishAsync(id, dishDto);
+            int restaurantId = GetCurrentRestaurantId();
+            var success = await dishService.UpdateDishAsync(id, dishDto, restaurantId);
             if (!success) return NotFound("Plato no encontrado o inactivo.");
             return Ok(new { Message = "Plato actualizado correctamente." });
         }
@@ -54,7 +65,8 @@ namespace SonqoAPI.Controllers
         [Authorize(Policy = "RequireAdmin")]
         public async Task<IActionResult> SoftDelete(int id)
         {
-            var success = await dishService.SoftDeleteDishAsync(id);
+            int restaurantId = GetCurrentRestaurantId();
+            var success = await dishService.SoftDeleteDishAsync(id, restaurantId);
             if (!success) return NotFound("No se encontró el plato.");
             return Ok(new { Message = "Plato eliminado del menú." });
         }
@@ -63,7 +75,8 @@ namespace SonqoAPI.Controllers
         [Authorize(Policy = "RequireKitchen")]
         public async Task<IActionResult> AssignRecipe([FromBody] AssignRecipeDTO recipeDto)
         {
-            var success = await dishService.AssignRecipeAsync(recipeDto);
+            int restaurantId = GetCurrentRestaurantId();
+            var success = await dishService.AssignRecipeAsync(recipeDto, restaurantId);
             if (!success) return BadRequest("Error al procesar la receta. Verifique el plato y los ingredientes.");
             return Ok(new { Message = "Receta guardada y porcionada correctamente." });
         }
@@ -72,7 +85,8 @@ namespace SonqoAPI.Controllers
         [Authorize(Policy = "RequireAdmin")]
         public async Task<IActionResult> GetShoppingList()
         {
-            var shoppingList = await dishService.GetShoppingListAsync();
+            int restaurantId = GetCurrentRestaurantId();
+            var shoppingList = await dishService.GetShoppingListAsync(restaurantId);
             return Ok(shoppingList);
         }
     }

@@ -2,6 +2,10 @@
 using SonqoAPI.Models.DTOs;
 using SonqoAPI.Repositories.IRepositories;
 using SonqoAPI.Service.IService;
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Threading.Tasks;
 
 namespace SonqoAPI.Service
 {
@@ -10,32 +14,28 @@ namespace SonqoAPI.Service
         IGenericRepository<Ingredient> ingredientRepository,
         IGenericRepository<RecipeDetails> recipeRepository) : IInventoryService
     {
-        public async Task<List<CalculatedIngredientDTO>> CalculatePlanningAsync(List<PlanningRequestDTO> planning)
+        public async Task<List<CalculatedIngredientDTO>> CalculatePlanningAsync(List<PlanningRequestDTO> planning, int restaurantId)
         {
             var dishIds = planning.Select(p => p.DishId).ToList();
 
-            // Obtenemos las recetas usando el repositorio genérico, aplicando el filtro WHERE y el INCLUDE
+            var validDishes = await dishRepository.GetAllAsync(d => dishIds.Contains(d.Id) && d.RestaurantId == restaurantId);
+            var validDishIds = validDishes.Select(d => d.Id).ToList();
+
             var recipesList = await recipeRepository.GetAllAsync(
-                filter: r => dishIds.Contains(r.DishId),
+                filter: r => validDishIds.Contains(r.DishId),
                 includes: r => r.Ingredient!
             );
 
             var recipes = recipesList.ToList();
-
-            if (recipes.Count == 0)
-            {
-                return [];
-            }
+            if (recipes.Count == 0) return [];
 
             var totalIngredients = new Dictionary<int, CalculatedIngredientDTO>();
-
             foreach (var plannedItem in planning)
             {
                 var dishIngredients = recipes.Where(r => r.DishId == plannedItem.DishId).ToList();
-
                 foreach (var recipeDetail in dishIngredients)
                 {
-                    if (recipeDetail.Ingredient == null) continue;
+                    if (recipeDetail.Ingredient == null || recipeDetail.Ingredient.RestaurantId != restaurantId) continue;
 
                     var ingredientId = recipeDetail.IngredientId;
                     var requiredQuantity = recipeDetail.RequiredQuantity * plannedItem.PlannedQuantity;
@@ -58,18 +58,16 @@ namespace SonqoAPI.Service
                 }
             }
 
-            var finalResult = totalIngredients.Values.Select(i => {
+            return [.. totalIngredients.Values.Select(i => {
                 i.SufficientStock = i.CurrentStock >= i.TotalQuantityRequired;
                 return i;
-            }).ToList();
-
-            return finalResult;
+            })];
         }
 
-        public async Task<bool> UpdateIngredientAsync(int id, IngredientCreateDTO dto)
+        public async Task<bool> UpdateIngredientAsync(int id, IngredientCreateDTO dto, int restaurantId)
         {
             var ingredient = await ingredientRepository.GetByIdAsync(id);
-            if (ingredient == null) return false;
+            if (ingredient == null || ingredient.RestaurantId != restaurantId) return false;
 
             ingredient.Name = dto.Name;
             ingredient.Category = dto.Category;
@@ -84,37 +82,32 @@ namespace SonqoAPI.Service
             return await ingredientRepository.SaveChangesAsync();
         }
 
-        public async Task<bool> DeleteIngredientAsync(int id)
+        public async Task<bool> DeleteIngredientAsync(int id, int restaurantId)
         {
             var ingredient = await ingredientRepository.GetByIdAsync(id);
-            if (ingredient == null) return false;
+            if (ingredient == null || ingredient.RestaurantId != restaurantId) return false;
 
             ingredient.IsActive = false;
             ingredientRepository.Update(ingredient);
             return await ingredientRepository.SaveChangesAsync();
         }
 
-        public async Task<bool> SeedTestDataAsync()
+        public async Task<bool> SeedTestDataAsync(int restaurantId)
         {
-            // Verificamos si ya existen platos usando el repositorio
-            var hasDishes = await dishRepository.ExistsAsync(d => true);
+            var hasDishes = await dishRepository.ExistsAsync(d => d.RestaurantId == restaurantId);
             if (hasDishes) return false;
 
-            // 1. Crear Ingredientes
-            var meat = new Ingredient { Name = "Beef", UnitOfMeasure = "g", CurrentStock = 5000, MinimumStock = 1000 };
-            var onion = new Ingredient { Name = "Onion", UnitOfMeasure = "g", CurrentStock = 3000, MinimumStock = 500 };
-            var potato = new Ingredient { Name = "Yellow Potato", UnitOfMeasure = "g", CurrentStock = 10000, MinimumStock = 2000 };
+            var meat = new Ingredient { Name = "Beef", UnitOfMeasure = "g", CurrentStock = 5000, MinimumStock = 1000, RestaurantId = restaurantId };
+            var onion = new Ingredient { Name = "Onion", UnitOfMeasure = "g", CurrentStock = 3000, MinimumStock = 500, RestaurantId = restaurantId };
+            var potato = new Ingredient { Name = "Yellow Potato", UnitOfMeasure = "g", CurrentStock = 10000, MinimumStock = 2000, RestaurantId = restaurantId };
 
             await ingredientRepository.AddRangeAsync([meat, onion, potato]);
             await ingredientRepository.SaveChangesAsync();
 
-            // 2. Crear un Plato
-            var lomoSaltado = new Dish { Name = "Lomo Saltado", Category = "Main Course", Price = 35.50m, IsAvailable = true };
-
+            var lomoSaltado = new Dish { Name = "Lomo Saltado", Category = "Main Course", Price = 35.50m, IsAvailable = true, RestaurantId = restaurantId };
             await dishRepository.AddAsync(lomoSaltado);
             await dishRepository.SaveChangesAsync();
 
-            // 3. Crear la Receta
             var recipeMeat = new RecipeDetails { DishId = lomoSaltado.Id, IngredientId = meat.Id, RequiredQuantity = 200 };
             var recipeOnion = new RecipeDetails { DishId = lomoSaltado.Id, IngredientId = onion.Id, RequiredQuantity = 100 };
             var recipePotato = new RecipeDetails { DishId = lomoSaltado.Id, IngredientId = potato.Id, RequiredQuantity = 300 };
@@ -125,12 +118,12 @@ namespace SonqoAPI.Service
             return true;
         }
 
-        public async Task<IEnumerable<Ingredient>> GetAllIngredientsAsync()
+        public async Task<IEnumerable<Ingredient>> GetAllIngredientsAsync(int restaurantId)
         {
-            return await ingredientRepository.GetAllAsync(i => i.IsActive);
+            return await ingredientRepository.GetAllAsync(i => i.IsActive && i.RestaurantId == restaurantId);
         }
 
-        public async Task<Ingredient> CreateIngredientAsync(IngredientCreateDTO dto)
+        public async Task<Ingredient> CreateIngredientAsync(IngredientCreateDTO dto, int restaurantId)
         {
             var newIngredient = new Ingredient
             {
@@ -141,7 +134,8 @@ namespace SonqoAPI.Service
                 MinimumStock = dto.MinimumStock,
                 UnitCost = dto.InitialCost,
                 IsPerishable = dto.IsPerishable,
-                ExpirationDate = dto.ExpirationDate?.ToUniversalTime()
+                ExpirationDate = dto.ExpirationDate?.ToUniversalTime(),
+                RestaurantId = restaurantId
             };
 
             await ingredientRepository.AddAsync(newIngredient);
@@ -149,15 +143,14 @@ namespace SonqoAPI.Service
             return newIngredient;
         }
 
-        public async Task<bool> RestockIngredientAsync(RestockDTO dto)
+        public async Task<bool> RestockIngredientAsync(RestockDTO dto, int restaurantId)
         {
             if (dto.QuantityAdded <= 0 || dto.TotalCostPaid < 0) return false;
 
             var ingredient = await ingredientRepository.GetByIdAsync(dto.IngredientId);
-            if (ingredient == null) return false;
+            if (ingredient == null || ingredient.RestaurantId != restaurantId) return false;
 
             var effectiveCurrentStock = ingredient.CurrentStock > 0 ? ingredient.CurrentStock : 0;
-
             var currentTotalValue = effectiveCurrentStock * ingredient.UnitCost;
             var newTotalValue = currentTotalValue + dto.TotalCostPaid;
             var newTotalStock = effectiveCurrentStock + dto.QuantityAdded;

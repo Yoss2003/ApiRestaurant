@@ -27,5 +27,6 @@ namespace SonqoAPI.Repositories.IRepositories
 
         // Ejecuta los cambios en la base de datos de PostgreSQL.
         Task<bool> SaveChangesAsync();
+        IQueryable<T> GetQueryable();
     }
 }
