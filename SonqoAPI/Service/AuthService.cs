@@ -18,7 +18,7 @@ namespace SonqoAPI.Service
     {
         public async Task<bool> RegisterAsync(RegisterDTO registerDto)
         {
-            var existingUsers = await userRepository.GetAllAsync(u => u.Username == registerDto.Username);
+            var existingUsers = await userRepository.GetAllAsync(u => u.Username.Equals(registerDto.Username, StringComparison.CurrentCultureIgnoreCase));
             if (existingUsers.Any()) return false;
 
             Role parsedRole = Enum.IsDefined(typeof(Role), registerDto.Role)
@@ -61,6 +61,8 @@ namespace SonqoAPI.Service
         private string GenerateJwtToken(User user)
         {
             var secretKey = configuration["JwtSettings:SecretKey"];
+            var issuer = configuration["JwtSettings:Issuer"] ?? "SonqoAPI";
+            var audience = configuration["JwtSettings:Audience"] ?? "SonqoAdmin";
             var key = Encoding.UTF8.GetBytes(secretKey!);
 
             var claims = new[]
@@ -75,6 +77,8 @@ namespace SonqoAPI.Service
             {
                 Subject = new ClaimsIdentity(claims),
                 Expires = DateTime.UtcNow.AddHours(8),
+                Issuer = issuer,
+                Audience = audience,
                 SigningCredentials = new SigningCredentials(
                     new SymmetricSecurityKey(key),
                     SecurityAlgorithms.HmacSha256Signature)
@@ -99,19 +103,27 @@ namespace SonqoAPI.Service
             });
         }
 
-        public async Task<UserResponseDTO?> CreateUserAsync(UserCreateDTO dto, int restaurantId)
+        public async Task<UserResponseDTO?> CreateUserAsync(UserCreateDTO dto, int adminRestaurantId, string adminRole)
         {
             var existingUsers = await userRepository.GetAllAsync(u => u.Username.Equals(dto.Username, StringComparison.CurrentCultureIgnoreCase));
             if (existingUsers.Any()) return null;
 
-            Role parsedRole = Enum.TryParse<Role>(dto.Role, out var roleEnum) ? roleEnum : Role.Kitchen;
+            if (!Enum.TryParse<Role>(dto.Role, out var roleEnum))
+            {
+                roleEnum = Role.Kitchen;
+            }
+
+            if (roleEnum == Role.SuperAdmin && adminRole != "SuperAdmin")
+            {
+                return null;
+            }
 
             var newUser = new User
             {
                 Username = dto.Username!,
-                Role = parsedRole,
+                Role = roleEnum,
                 IsActive = true,
-                RestaurantId = restaurantId // Asignamos el local del admin actual
+                RestaurantId = adminRestaurantId
             };
 
             newUser.PasswordHash = passwordHasher.HashPassword(newUser, dto.Password!);
@@ -122,20 +134,24 @@ namespace SonqoAPI.Service
             return new UserResponseDTO { Id = newUser.Id, Username = newUser.Username, Role = newUser.Role.ToString() };
         }
 
-        public async Task<bool> UpdateUserAsync(int id, UserUpdateDTO dto, int restaurantId)
+        public async Task<bool> UpdateUserAsync(int id, UserUpdateDTO dto, int adminRestaurantId, string adminRole)
         {
             var user = await userRepository.GetByIdAsync(id);
-            if (user == null || !user.IsActive || user.RestaurantId != restaurantId) return false;
-
-            var existingUsers = await userRepository.GetAllAsync(u => u.Username.Equals(dto.Username, StringComparison.CurrentCultureIgnoreCase) && u.Id != id);
-            if (existingUsers.Any()) return false;
-
-            user.Username = dto.Username!;
+            if (user == null || !user.IsActive || user.RestaurantId != adminRestaurantId) return false;
 
             if (Enum.TryParse<Role>(dto.Role, out var roleEnum))
             {
+                if ((roleEnum == Role.SuperAdmin || user.Role == Role.SuperAdmin) && adminRole != "SuperAdmin")
+                {
+                    return false;
+                }
                 user.Role = roleEnum;
             }
+
+            var existingUsers = await userRepository.GetAllAsync(u => u.Username.Equals(dto.Username, StringComparison.OrdinalIgnoreCase) && u.Id != id);
+            if (existingUsers.Any()) return false;
+
+            user.Username = dto.Username!;
 
             if (!string.IsNullOrWhiteSpace(dto.Password))
             {

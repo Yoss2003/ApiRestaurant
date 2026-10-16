@@ -22,10 +22,12 @@ namespace SonqoAPI.Controllers
 
         [HttpGet]
         [AllowAnonymous]
-        public async Task<ActionResult<IEnumerable<Dish>>> GetAll()
+        public async Task<ActionResult<IEnumerable<Dish>>> GetAll([FromQuery] int? restaurantId)
         {
-            int restaurantId = GetCurrentRestaurantId();
-            var dishes = await dishService.GetAllActiveDishesAsync(restaurantId);
+            int resolvedRestaurantId = restaurantId ?? GetCurrentRestaurantId();
+            if (resolvedRestaurantId <= 0) resolvedRestaurantId = 1;
+
+            var dishes = await dishService.GetAllActiveDishesAsync(resolvedRestaurantId);
             return Ok(dishes);
         }
 

@@ -1,6 +1,8 @@
 ﻿using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Storage;
 using SonqoAPI.Data;
 using SonqoAPI.Repositories.IRepositories;
+using System.Data;
 using System.Linq.Expressions;
 
 namespace SonqoAPI.Repositories
@@ -65,13 +67,17 @@ namespace SonqoAPI.Repositories
 
         public async Task<bool> SaveChangesAsync()
         {
-            // Devuelve true si se afectó al menos una fila en la base de datos
             return await _context.SaveChangesAsync() > 0;
         }
 
         public IQueryable<T> GetQueryable()
         {
             return _dbSet.AsQueryable();
+        }
+
+        public async Task<IDbContextTransaction> BeginTransactionAsync(IsolationLevel isolationLevel = IsolationLevel.ReadCommitted)
+        {
+            return await _context.Database.BeginTransactionAsync(isolationLevel);
         }
     }
 }

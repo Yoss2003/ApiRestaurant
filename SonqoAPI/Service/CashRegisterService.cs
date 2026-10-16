@@ -2,13 +2,12 @@
 using SonqoAPI.Models;
 using SonqoAPI.Repositories.IRepositories;
 using SonqoAPI.Service.IService;
-using System;
-using System.Threading.Tasks;
 
 namespace SonqoAPI.Service
 {
     public class CashRegisterService(
-        IGenericRepository<CashRegister> cashRepository
+        IGenericRepository<CashRegister> cashRepository,
+        IGenericRepository<Payment> paymentRepository
         ) : ICashRegisterService
     {
         public async Task<CashRegister?> GetOpenRegisterAsync(int restaurantId)
@@ -32,6 +31,7 @@ namespace SonqoAPI.Service
             };
 
             await cashRepository.AddAsync(newRegister);
+            await cashRepository.SaveChangesAsync();
             return true;
         }
 
@@ -40,8 +40,16 @@ namespace SonqoAPI.Service
             var currentOpen = await GetOpenRegisterAsync(restaurantId);
             if (currentOpen == null) return false;
 
+            var cashPaymentsTotal = await paymentRepository.GetQueryable()
+                .Where(p => p.PaymentDate >= currentOpen.OpenedAt &&
+                            p.PaymentMethodId == 1 &&
+                            p.Order!.RestaurantId == restaurantId)
+                .SumAsync(p => (decimal?)p.Amount) ?? 0m;
+
+            decimal expectedCashBalance = currentOpen.OpeningBalance + cashPaymentsTotal;
+
             currentOpen.ClosingBalance = actualBalance;
-            currentOpen.Discrepancy = actualBalance - currentOpen.OpeningBalance;
+            currentOpen.Discrepancy = actualBalance - expectedCashBalance;
             currentOpen.ClosedAt = DateTime.UtcNow;
             currentOpen.IsOpen = false;
             currentOpen.Notes = notes;

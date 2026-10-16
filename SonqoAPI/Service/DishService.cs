@@ -144,36 +144,44 @@ namespace SonqoAPI.Service
             var dish = await dishRepository.GetByIdAsync(recipeDto.DishId);
             if (dish == null || dish.RestaurantId != restaurantId) return false;
 
-            dish.YieldPortions = recipeDto.YieldPortions > 0 ? recipeDto.YieldPortions : 1;
-            dishRepository.Update(dish);
-            await dishRepository.SaveChangesAsync();
-
-            var existingRecipe = await recipeRepository.GetAllAsync(r => r.DishId == recipeDto.DishId);
-            foreach (var detail in existingRecipe)
+            using var transaction = await dishRepository.BeginTransactionAsync();
+            try
             {
-                recipeRepository.Delete(detail);
-            }
-            await recipeRepository.SaveChangesAsync();
+                dish.YieldPortions = recipeDto.YieldPortions > 0 ? recipeDto.YieldPortions : 1;
+                dishRepository.Update(dish);
 
-            foreach (var item in recipeDto.Items)
-            {
-                decimal quantityPerPortion = item.TotalQuantity;
-                var ingredient = await ingredientRepository.GetByIdAsync(item.IngredientId);
-                // Asegurarse de que el ingrediente pertenece al mismo restaurante
-                if (ingredient == null || ingredient.RestaurantId != restaurantId) continue;
-
-                decimal finalQuantity = UnitConverter.ConvertQuantityToBase(quantityPerPortion, item.Unit, ingredient.UnitOfMeasure);
-                finalQuantity = Math.Round(finalQuantity, 3);
-
-                var newDetail = new RecipeDetails
+                var existingRecipes = await recipeRepository.GetAllAsync(r => r.DishId == recipeDto.DishId);
+                foreach (var oldRecipe in existingRecipes)
                 {
-                    DishId = recipeDto.DishId,
-                    IngredientId = item.IngredientId,
-                    RequiredQuantity = finalQuantity
-                };
-                await recipeRepository.AddAsync(newDetail);
+                    recipeRepository.Delete(oldRecipe);
+                }
+                await recipeRepository.SaveChangesAsync();
+
+                if (recipeDto.Items != null && recipeDto.Items.Count > 0)
+                {
+                    foreach (var item in recipeDto.Items)
+                    {
+                        if (item.TotalQuantity <= 0) continue;
+
+                        var newRecipeDetail = new RecipeDetails
+                        {
+                            DishId = recipeDto.DishId,
+                            IngredientId = item.IngredientId,
+                            RequiredQuantity = item.TotalQuantity
+                        };
+                        await recipeRepository.AddAsync(newRecipeDetail);
+                    }
+                }
+
+                await recipeRepository.SaveChangesAsync();
+                await transaction.CommitAsync();
+                return true;
             }
-            return await recipeRepository.SaveChangesAsync();
+            catch (Exception)
+            {
+                await transaction.RollbackAsync();
+                return false;
+            }
         }
 
         public async Task<IEnumerable<ShoppingListItemDTO>> GetShoppingListAsync(int restaurantId)

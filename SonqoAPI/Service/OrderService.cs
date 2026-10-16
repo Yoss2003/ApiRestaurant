@@ -6,10 +6,7 @@ using SonqoAPI.Models.DTOs;
 using SonqoAPI.Models.Enum;
 using SonqoAPI.Repositories.IRepositories;
 using SonqoAPI.Service.IService;
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Threading.Tasks;
+using System.Data;
 
 namespace SonqoAPI.Service
 {
@@ -76,6 +73,7 @@ namespace SonqoAPI.Service
                 o.Status != OrderStatus.Cancelled);
 
             var activeOrder = existingOrders.FirstOrDefault();
+            int targetOrderId = 0;
 
             if (activeOrder != null)
             {
@@ -103,7 +101,7 @@ namespace SonqoAPI.Service
                 try
                 {
                     await orderRepository.SaveChangesAsync();
-                    return true;
+                    targetOrderId = activeOrder.Id;
                 }
                 catch (DbUpdateConcurrencyException) { return false; }
             }
@@ -112,7 +110,7 @@ namespace SonqoAPI.Service
                 var newOrder = new Order
                 {
                     TableId = orderDto.TableId,
-                    RestaurantId = restaurantId, // <-- Vinculamos la orden a la sucursal
+                    RestaurantId = restaurantId,
                     OrderDate = DateTime.UtcNow,
                     Status = OrderStatus.Pending,
                     TotalAmount = 0
@@ -150,11 +148,18 @@ namespace SonqoAPI.Service
 
                 try
                 {
-                    await orderRepository.SaveChangesAsync();
-                    return true;
+                    await orderRepository.SaveChangesAsync(); 
+                    targetOrderId = newOrder.Id;
                 }
                 catch (DbUpdateConcurrencyException) { return false; }
             }
+
+            if (targetOrderId > 0)
+            {
+                await orderHub.Clients.All.SendAsync("ReceiveOrderUpdate", new { orderId = targetOrderId, type = "ORDER_CREATED" });
+            }
+
+            return true;
         }
 
         public async Task<bool> UpdateOrderDetailStatusAsync(int detailId, string status, string userRole, int restaurantId)
@@ -183,6 +188,7 @@ namespace SonqoAPI.Service
             detail.Status = status;
             orderDetailRepository.Update(detail);
             await orderDetailRepository.SaveChangesAsync();
+            await orderHub.Clients.All.SendAsync("ReceiveOrderUpdate", new { detailId, status });
             return true;
         }
 
@@ -272,10 +278,10 @@ namespace SonqoAPI.Service
 
         public async Task<bool> PayOrderAsync(int orderId, PayOrderDTO paymentDto, int restaurantId)
         {
-            // Ojo: Le pasamos el restaurantId a la caja para verificar si la caja de ESTA sucursal está abierta
             var openRegister = await cashService.GetOpenRegisterAsync(restaurantId);
             if (openRegister == null) return false;
 
+            using var transaction = await orderRepository.BeginTransactionAsync(IsolationLevel.ReadCommitted);
             try
             {
                 var order = await orderRepository.GetQueryable()
@@ -334,11 +340,21 @@ namespace SonqoAPI.Service
                 }
 
                 await orderRepository.SaveChangesAsync();
-                await orderHub.Clients.All.SendAsync("OrderPaid", orderId);
+                await transaction.CommitAsync();
 
+                await orderHub.Clients.All.SendAsync("OrderPaid", orderId);
                 return true;
             }
-            catch (DbUpdateConcurrencyException) { return false; }
+            catch (DbUpdateConcurrencyException)
+            {
+                await transaction.RollbackAsync();
+                return false;
+            }
+            catch
+            {
+                await transaction.RollbackAsync();
+                throw;
+            }
         }
 
         public async Task<DashboardDTO> GetDashboardMetricsAsync(int restaurantId)

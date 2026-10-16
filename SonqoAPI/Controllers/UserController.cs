@@ -33,7 +33,7 @@ namespace SonqoAPI.Controllers
             if (!ModelState.IsValid) return BadRequest(ModelState);
 
             int restaurantId = GetCurrentRestaurantId();
-            var newUser = await authService.CreateUserAsync(dto, restaurantId);
+            var newUser = await authService.CreateUserAsync(dto, restaurantId, User.FindFirst(ClaimTypes.Role)?.Value ?? "");
             if (newUser == null)
             {
                 return BadRequest(new { message = "El nombre de usuario ya está en uso." });
@@ -47,7 +47,7 @@ namespace SonqoAPI.Controllers
             if (!ModelState.IsValid) return BadRequest(ModelState);
 
             int restaurantId = GetCurrentRestaurantId();
-            var result = await authService.UpdateUserAsync(id, dto, restaurantId);
+            var result = await authService.UpdateUserAsync(id, dto, restaurantId, User.FindFirst(ClaimTypes.Role)?.Value ?? "");
             if (!result)
             {
                 return BadRequest(new { message = "No se pudo actualizar." });
