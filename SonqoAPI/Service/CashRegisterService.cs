@@ -18,21 +18,36 @@ namespace SonqoAPI.Service
 
         public async Task<bool> OpenRegisterAsync(int userId, decimal openingBalance, int restaurantId)
         {
-            var currentOpen = await GetOpenRegisterAsync(restaurantId);
-            if (currentOpen != null) return false;
-
-            var newRegister = new CashRegister
+            using var transaction = await cashRepository.BeginTransactionAsync(System.Data.IsolationLevel.Serializable);
+            try
             {
-                UserId = userId,
-                OpeningBalance = openingBalance,
-                OpenedAt = DateTime.UtcNow,
-                IsOpen = true,
-                RestaurantId = restaurantId
-            };
+                var currentOpen = await GetOpenRegisterAsync(restaurantId);
+                if (currentOpen != null)
+                {
+                    await transaction.RollbackAsync();
+                    return false;
+                }
 
-            await cashRepository.AddAsync(newRegister);
-            await cashRepository.SaveChangesAsync();
-            return true;
+                var newRegister = new CashRegister
+                {
+                    UserId = userId,
+                    OpeningBalance = openingBalance,
+                    OpenedAt = DateTime.UtcNow,
+                    IsOpen = true,
+                    RestaurantId = restaurantId
+                };
+
+                await cashRepository.AddAsync(newRegister);
+                await cashRepository.SaveChangesAsync();
+                await transaction.CommitAsync();
+
+                return true;
+            }
+            catch (Exception)
+            {
+                await transaction.RollbackAsync();
+                return false;
+            }
         }
 
         public async Task<bool> CloseRegisterAsync(int userId, decimal actualBalance, string? notes, int restaurantId)

@@ -46,19 +46,13 @@ namespace SonqoAPI.Controllers
             if (!ModelState.IsValid) return BadRequest(ModelState);
 
             int restaurantId = GetCurrentRestaurantId();
+            if (restaurantId == 0) return BadRequest("Contexto de restaurante inválido.");
+
             var settings = await restaurantRepo.GetByIdAsync(restaurantId);
 
             if (settings == null)
             {
-                // Si por alguna extraña razón el local no existe en DB, lo creamos
-                settings = new Restaurant
-                {
-                    Id = restaurantId,
-                    Name = dto.Name,
-                    Ruc = dto.Ruc,
-                    Address = dto.Address
-                };
-                await restaurantRepo.AddAsync(settings);
+                return NotFound("Restaurante no encontrado. Contacte al SuperAdmin para crear la sucursal primero.");
             }
             else
             {
@@ -79,7 +73,7 @@ namespace SonqoAPI.Controllers
             var roleClaim = User.Claims.FirstOrDefault(c => c.Type == ClaimTypes.Role)?.Value;
             if (roleClaim != "SuperAdmin")
             {
-                return Forbid("Acceso denegado. Solo el SuperAdmin puede crear nuevas sucursales o empresas.");
+                return StatusCode(403, new { message = "Acceso denegado. Solo el SuperAdmin puede crear nuevas sucursales." });
             }
 
             if (!ModelState.IsValid) return BadRequest(ModelState);

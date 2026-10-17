@@ -7,7 +7,9 @@ namespace SonqoAPI.Models.DTOs
         [Range(1, int.MaxValue, ErrorMessage = "El ID de la mesa es inválido.")]
         public int TableId { get; set; }
 
+        [Required]
         [MinLength(1, ErrorMessage = "Debe haber al menos un plato en el pedido.")]
+        [MaxLength(20, ErrorMessage = "No puede pedir más de 20 líneas de platos distintas a la vez.")]
         public List<OrderDetailCreateDTO> Items { get; set; } = [];
     }
 
@@ -19,6 +21,7 @@ namespace SonqoAPI.Models.DTOs
         [Range(1, 100, ErrorMessage = "La cantidad debe ser entre 1 y 100.")]
         public int Quantity { get; set; }
 
+        [MaxLength(200, ErrorMessage = "Las notas son demasiado largas.")]
         public string Notes { get; set; } = string.Empty;
     }
 }

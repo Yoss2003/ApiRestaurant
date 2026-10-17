@@ -39,11 +39,11 @@ namespace SonqoAPI.Controllers
                 jwtRestaurantId = id;
             }
 
-            var success = await orderService.CreateOrderAsync(orderDto, jwtRestaurantId);
-            if (!success)
+            var orderId = await orderService.CreateOrderAsync(orderDto, jwtRestaurantId);
+            if (orderId == 0)
                 return BadRequest(new { message = "No se pudo procesar el pedido. Verifique stock y mesa." });
 
-            return Ok(new { message = "Pedido creado exitosamente." });
+            return Ok(new { message = "Pedido creado exitosamente.", orderId = orderId });
         }
 
         [HttpPatch("details/{detailId}/status")]

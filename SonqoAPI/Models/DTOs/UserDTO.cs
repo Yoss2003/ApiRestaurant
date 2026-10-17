@@ -29,10 +29,12 @@ namespace SonqoAPI.Models.DTOs
     public class UserUpdateDTO
     {
         [Required]
+        [MinLength(4, ErrorMessage = "El nombre de usuario debe tener al menos 4 caracteres.")]
         public string? Username { get; set; }
 
         public string? Role { get; set; }
 
+        [MinLength(6, ErrorMessage = "La contraseña debe tener al menos 6 caracteres.")]
         public string? Password { get; set; }
     }
     public class RestaurantSettingsDTO

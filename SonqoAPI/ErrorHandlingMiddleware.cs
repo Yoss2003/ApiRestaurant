@@ -35,8 +35,7 @@ namespace SonqoAPI.Middlewares
             var response = new
             {
                 status = context.Response.StatusCode,
-                message = "Ocurrió un error interno en el servidor.",
-                detailed = exception.Message
+                message = "Ocurrió un error interno en el servidor. Nuestro equipo técnico ya fue notificado."
             };
 
             var jsonResponse = JsonSerializer.Serialize(response);

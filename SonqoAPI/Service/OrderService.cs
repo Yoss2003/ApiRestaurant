@@ -23,24 +23,29 @@ namespace SonqoAPI.Service
         IHubContext<OrderHub> orderHub
         ) : IOrderService
     {
-        public async Task<bool> CreateOrderAsync(OrderCreateDTO orderDto, int? jwtRestaurantId = null)
+        public async Task<int> CreateOrderAsync(OrderCreateDTO orderDto, int? jwtRestaurantId = null)
         {
             var table = await tableRepository.GetQueryable()
                 .Include(t => t.Restaurant)
                 .FirstOrDefaultAsync(t => t.Id == orderDto.TableId);
 
             if (table == null || table.IsDeleted || table.Restaurant == null || !table.Restaurant.IsActive)
-                return false;
+                return 0;
 
             int actualRestaurantId = table.RestaurantId;
 
             if (jwtRestaurantId.HasValue && jwtRestaurantId.Value != 0 && jwtRestaurantId.Value != actualRestaurantId)
             {
-                return false;
+                return 0;
             }
 
             var recipes = await recipeRepository.GetAllAsync();
-            var ingredients = await ingredientRepository.GetAllAsync(i => i.RestaurantId == actualRestaurantId);
+            var today = DateTime.UtcNow.Date;
+            var ingredients = await ingredientRepository.GetAllAsync(i =>
+                i.RestaurantId == actualRestaurantId &&
+                i.IsActive == true &&
+                (!i.IsPerishable || i.ExpirationDate == null || i.ExpirationDate >= today)
+            );
 
             var requiredIngredients = new Dictionary<int, decimal>();
             var validDishes = new Dictionary<int, Dish>();
@@ -71,7 +76,7 @@ namespace SonqoAPI.Service
             var requestedDishIds = orderDto.Items.Select(i => i.DishId).Distinct().Count();
             if (validDishes.Count != requestedDishIds)
             {
-                return false;
+                return 0;
             }
 
             foreach (var kvp in requiredIngredients)
@@ -79,7 +84,7 @@ namespace SonqoAPI.Service
                 var ing = ingredients.FirstOrDefault(i => i.Id == kvp.Key);
                 if (ing == null || ing.CurrentStock < kvp.Value)
                 {
-                    return false;
+                    return 0;
                 }
             }
 
@@ -120,7 +125,7 @@ namespace SonqoAPI.Service
                     await orderRepository.SaveChangesAsync();
                     targetOrderId = activeOrder.Id;
                 }
-                catch (DbUpdateConcurrencyException) { return false; }
+                catch (DbUpdateConcurrencyException) { return 0; }
             }
             else
             {
@@ -155,7 +160,7 @@ namespace SonqoAPI.Service
                     DeductInventory(dish, item.Quantity, recipes, ingredients);
                 }
 
-                if (newOrder.OrderDetails.Count == 0) return false;
+                if (newOrder.OrderDetails.Count == 0) return 0;
 
                 newOrder.TotalAmount = total;
                 table.IsAvailable = false;
@@ -168,15 +173,19 @@ namespace SonqoAPI.Service
                     await orderRepository.SaveChangesAsync();
                     targetOrderId = newOrder.Id;
                 }
-                catch (DbUpdateConcurrencyException) { return false; }
+                catch (DbUpdateConcurrencyException) { return 0; }
             }
 
             if (targetOrderId > 0)
             {
-                await orderHub.Clients.Group(actualRestaurantId.ToString()).SendAsync("ReceiveOrderUpdate", new { orderId = targetOrderId, type = "ORDER_CREATED" });
+                try
+                {
+                    await orderHub.Clients.Group(actualRestaurantId.ToString()).SendAsync("ReceiveOrderUpdate", new { orderId = targetOrderId, type = "ORDER_CREATED" });
+                }
+                catch { /* Ignoramos fallos del WebSocket */ }
             }
 
-            return true;
+            return targetOrderId;
         }
 
         public async Task<bool> UpdateOrderDetailStatusAsync(int detailId, string status, string userRole, int restaurantId)
@@ -205,7 +214,11 @@ namespace SonqoAPI.Service
             detail.Status = status;
             orderDetailRepository.Update(detail);
             await orderDetailRepository.SaveChangesAsync();
-            await orderHub.Clients.Group(restaurantId.ToString()).SendAsync("ReceiveOrderUpdate", new { detailId, status });
+            try
+            {
+                await orderHub.Clients.Group(restaurantId.ToString()).SendAsync("ReceiveOrderUpdate", new { detailId, status });
+            }
+            catch { /* Ignoramos fallos del WebSocket */ }
             return true;
         }
 

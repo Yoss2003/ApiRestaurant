@@ -1,27 +1,40 @@
-﻿namespace SonqoAPI.Models.DTOs
+﻿using System.ComponentModel.DataAnnotations;
+
+namespace SonqoAPI.Models.DTOs
 {
     public class DishUpdateDTO
     {
+        [Required(ErrorMessage = "El nombre es obligatorio")]
+        [MinLength(2)]
         public string Name { get; set; } = string.Empty;
+
+        [Required]
         public string Category { get; set; } = string.Empty;
+
+        [Range(0.01, double.MaxValue, ErrorMessage = "El precio debe ser mayor a 0.")]
         public decimal Price { get; set; }
     }
 
     public class RecipeItemDTO
     {
+        [Range(1, int.MaxValue)]
         public int IngredientId { get; set; }
+
+        [Range(0.001, double.MaxValue, ErrorMessage = "La cantidad debe ser mayor a 0.")]
         public decimal TotalQuantity { get; set; }
+
+        [Required]
         public string Unit { get; set; } = string.Empty;
     }
 
     public class AssignRecipeDTO
     {
         public int DishId { get; set; }
+        [Range(1, 100)]
         public int YieldPortions { get; set; }
         public List<RecipeItemDTO> Items { get; set; } = [];
     }
 
-    // NUEVO: Lo que le enviaremos a Angular
     public class DishResponseDTO
     {
         public int Id { get; set; }

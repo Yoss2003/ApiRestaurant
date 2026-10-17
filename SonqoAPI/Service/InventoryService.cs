@@ -75,6 +75,11 @@ namespace SonqoAPI.Service
             var ingredient = await ingredientRepository.GetByIdAsync(id);
             if (ingredient == null || ingredient.RestaurantId != restaurantId) return false;
 
+            if (ingredient.CurrentStock > 0 && !ingredient.UnitOfMeasure.Equals(dto.BaseUnit, StringComparison.OrdinalIgnoreCase))
+            {
+                return false;
+            }
+
             ingredient.Name = dto.Name;
             ingredient.Category = dto.Category;
             ingredient.UnitOfMeasure = dto.BaseUnit;

@@ -454,11 +454,15 @@ namespace SonqoAPI.Migrations
 
                     b.Property<string>("Username")
                         .IsRequired()
-                        .HasColumnType("text");
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
 
                     b.HasKey("Id");
 
                     b.HasIndex("RestaurantId");
+
+                    b.HasIndex("Username")
+                        .IsUnique();
 
                     b.ToTable("usuarios", (string)null);
                 });
