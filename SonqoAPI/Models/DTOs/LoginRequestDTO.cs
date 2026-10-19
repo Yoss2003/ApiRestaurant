@@ -5,6 +5,7 @@
     {
         public string Username { get; set; } = string.Empty;
         public string Password { get; set; } = string.Empty;
+        public string? Ruc { get; set; }
     }
 
     // Lo que responde la API si las credenciales son correctas

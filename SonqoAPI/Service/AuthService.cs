@@ -13,6 +13,7 @@ namespace SonqoAPI.Service
 {
     public class AuthService(
         IGenericRepository<User> userRepository,
+        IGenericRepository<Restaurant> restaurantRepository,
         IConfiguration configuration,
         IPasswordHasher<User> passwordHasher) : IAuthService
     {
@@ -55,7 +56,31 @@ namespace SonqoAPI.Service
             var verificationResult = passwordHasher.VerifyHashedPassword(user, user.PasswordHash, loginDto.Password);
             if (verificationResult == PasswordVerificationResult.Failed) return null;
 
-            var token = GenerateJwtToken(user);
+            int activeRestaurantId = user.RestaurantId ?? 0;
+
+            if (!string.IsNullOrWhiteSpace(loginDto.Ruc))
+            {
+                var rests = await restaurantRepository.GetAllAsync(r => r.Ruc == loginDto.Ruc && r.IsActive);
+                var targetRest = rests.FirstOrDefault();
+
+                if (targetRest != null)
+                {
+                    if (user.Role == Role.SuperAdmin)
+                    {
+                        activeRestaurantId = targetRest.Id;
+                    }
+                    else if (user.RestaurantId != targetRest.Id)
+                    {
+                        return null;
+                    }
+                }
+                else
+                {
+                    return null;
+                }
+            }
+
+            var token = GenerateJwtToken(user, activeRestaurantId);
 
             return new LoginResponseDTO
             {
@@ -64,7 +89,7 @@ namespace SonqoAPI.Service
             };
         }
 
-        private string GenerateJwtToken(User user)
+        private string GenerateJwtToken(User user, int restaurantId)
         {
             var secretKey = configuration["JwtSettings:SecretKey"];
             var issuer = configuration["JwtSettings:Issuer"] ?? "SonqoAPI";
@@ -76,7 +101,7 @@ namespace SonqoAPI.Service
                 new Claim(ClaimTypes.NameIdentifier, user.Id.ToString()),
                 new Claim(ClaimTypes.Name, user.Username),
                 new Claim(ClaimTypes.Role, user.Role.ToString()),
-                new Claim("RestaurantId", user.RestaurantId?.ToString() ?? "0")
+                new Claim("RestaurantId", restaurantId.ToString())
             };
 
             var tokenDescriptor = new SecurityTokenDescriptor
@@ -120,7 +145,7 @@ namespace SonqoAPI.Service
                 roleEnum = Role.Kitchen;
             }
 
-            if (roleEnum == Role.SuperAdmin && adminRole != "SuperAdmin")
+            if ((roleEnum == Role.SuperAdmin || roleEnum == Role.Admin) && adminRole != "SuperAdmin")
             {
                 return null;
             }
@@ -146,14 +171,14 @@ namespace SonqoAPI.Service
             var user = await userRepository.GetByIdAsync(id);
             if (user == null || !user.IsActive || user.RestaurantId != adminRestaurantId) return false;
 
-            if (user.Role == Role.SuperAdmin && adminRole != "SuperAdmin")
+            if ((user.Role == Role.SuperAdmin || user.Role == Role.Admin) && adminRole != "SuperAdmin")
             {
                 return false;
             }
 
             if (Enum.TryParse<Role>(dto.Role, out var roleEnum))
             {
-                if (roleEnum == Role.SuperAdmin && adminRole != "SuperAdmin")
+                if ((roleEnum == Role.SuperAdmin || roleEnum == Role.Admin) && adminRole != "SuperAdmin")
                 {
                     return false;
                 }
@@ -181,7 +206,7 @@ namespace SonqoAPI.Service
             var user = await userRepository.GetByIdAsync(id);
             if (user == null || user.RestaurantId != restaurantId) return false;
 
-            if (user.Role == Role.SuperAdmin && adminRole != "SuperAdmin") return false;
+            if ((user.Role == Role.SuperAdmin || user.Role == Role.Admin) && adminRole != "SuperAdmin") return false;
 
             if (user.Username.Equals("admin", StringComparison.CurrentCultureIgnoreCase)) return false;
 
