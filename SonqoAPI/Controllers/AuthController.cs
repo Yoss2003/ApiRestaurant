@@ -1,7 +1,11 @@
-﻿using Microsoft.AspNetCore.Mvc;
-using Microsoft.AspNetCore.Authorization;
+﻿using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Identity;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
+using SonqoAPI.Models;
 using SonqoAPI.Models.DTOs;
+using SonqoAPI.Models.Enum;
+using SonqoAPI.Repositories.IRepositories;
 using SonqoAPI.Service.IService;
 using System.Security.Claims;
 
@@ -41,6 +45,38 @@ namespace SonqoAPI.Controllers
             }
 
             return Ok(result);
+        }
+
+        [HttpPost("reset-admin")]
+        [AllowAnonymous]
+        public async Task<IActionResult> ResetAdmin(
+            [FromServices] IGenericRepository<User> userRepo,
+            [FromServices] IPasswordHasher<User> hasher)
+        {
+            var users = await userRepo.GetAllAsync(u => u.Username.ToLower() == "admin");
+            var admin = users.FirstOrDefault();
+
+            if (admin == null)
+            {
+                admin = new User
+                {
+                    Username = "Admin",
+                    Role = Role.SuperAdmin,
+                    IsActive = true
+                };
+                admin.PasswordHash = hasher.HashPassword(admin, "Admin123!");
+                await userRepo.AddAsync(admin);
+            }
+            else
+            {
+                admin.Role = Role.SuperAdmin;
+                admin.IsActive = true;
+                admin.PasswordHash = hasher.HashPassword(admin, "Admin123!");
+                userRepo.Update(admin);
+            }
+
+            await userRepo.SaveChangesAsync();
+            return Ok(new { message = "¡Listo! Ya puedes iniciar sesión con Admin y Admin123!" });
         }
     }
 }
