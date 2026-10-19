@@ -4,7 +4,7 @@ namespace SonqoAPI.Service.IService
 {
     public interface IAuthService
     {
-        Task<LoginResponseDTO?> LoginAsync(LoginRequestDTO loginDto);
+        Task<(LoginResponseDTO? Result, string ErrorMessage)> LoginAsync(LoginRequestDTO loginDto);
         Task<bool> RegisterAsync(RegisterDTO registerDto, int roleIdActor = 0);
         Task<IEnumerable<UserResponseDTO>> GetAllUsersAsync(int restaurantId);
         Task<UserResponseDTO?> CreateUserAsync(UserCreateDTO dto, int adminRestaurantId, string adminRole);

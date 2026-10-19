@@ -37,11 +37,11 @@ namespace SonqoAPI.Controllers
         [EnableRateLimiting("LoginLimit")]
         public async Task<IActionResult> Login([FromBody] LoginRequestDTO loginDto)
         {
-            var result = await authService.LoginAsync(loginDto);
+            var (result, errorMessage) = await authService.LoginAsync(loginDto);
 
             if (result == null)
             {
-                return Unauthorized("Credenciales inválidas o usuario inactivo.");
+                return Unauthorized(new { message = errorMessage });
             }
 
             return Ok(result);

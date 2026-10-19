@@ -99,8 +99,8 @@ builder.Services.AddCors(options =>
                 "http://192.168.1.16:4200",
                 "http://localhost:5173",
                 "http://192.168.1.16:5173",
-		"https://menu-restaurant-89w0.onrender.com",
-		"https://control-restaurant.onrender.com"
+		        "https://menu-restaurant-89w0.onrender.com",
+		        "https://control-restaurant.onrender.com"
               )
               .AllowAnyHeader()
               .AllowAnyMethod()

@@ -46,47 +46,63 @@ namespace SonqoAPI.Service
             return await userRepository.SaveChangesAsync();
         }
 
-        public async Task<LoginResponseDTO?> LoginAsync(LoginRequestDTO loginDto)
+        public async Task<(LoginResponseDTO? Result, string ErrorMessage)> LoginAsync(LoginRequestDTO loginDto)
         {
-            var users = await userRepository.GetAllAsync(u => u.Username == loginDto.Username && u.IsActive);
+            var users = await userRepository.GetAllAsync(u => u.Username.ToLower() == loginDto.Username.ToLower());
             var user = users.FirstOrDefault();
 
-            if (user == null) return null;
+            if (user == null)
+                return (null, "El usuario ingresado no existe.");
+
+            if (!user.IsActive)
+                return (null, "Este usuario ha sido desactivado por el administrador.");
 
             var verificationResult = passwordHasher.VerifyHashedPassword(user, user.PasswordHash, loginDto.Password);
-            if (verificationResult == PasswordVerificationResult.Failed) return null;
+            if (verificationResult == PasswordVerificationResult.Failed)
+                return (null, "La contraseña es incorrecta.");
 
             int activeRestaurantId = user.RestaurantId ?? 0;
 
-            if (!string.IsNullOrWhiteSpace(loginDto.Ruc))
+            if (user.Role != Role.SuperAdmin)
             {
-                var rests = await restaurantRepository.GetAllAsync(r => r.Ruc == loginDto.Ruc && r.IsActive);
+                if (string.IsNullOrWhiteSpace(loginDto.Ruc))
+                    return (null, "El RUC de la empresa es obligatorio para su cuenta.");
+
+                var rests = await restaurantRepository.GetAllAsync(r => r.Ruc == loginDto.Ruc);
                 var targetRest = rests.FirstOrDefault();
 
-                if (targetRest != null)
+                if (targetRest == null)
+                    return (null, "El RUC ingresado no existe en nuestro sistema.");
+
+                if (!targetRest.IsActive)
+                    return (null, "La empresa asociada a este RUC se encuentra suspendida o inactiva.");
+
+                if (user.RestaurantId != targetRest.Id)
+                    return (null, "Usted no pertenece a la empresa vinculada a este RUC.");
+
+                activeRestaurantId = targetRest.Id;
+            }
+            else
+            {
+                if (!string.IsNullOrWhiteSpace(loginDto.Ruc))
                 {
-                    if (user.Role == Role.SuperAdmin)
-                    {
+                    var rests = await restaurantRepository.GetAllAsync(r => r.Ruc == loginDto.Ruc);
+                    var targetRest = rests.FirstOrDefault();
+
+                    if (targetRest != null)
                         activeRestaurantId = targetRest.Id;
-                    }
-                    else if (user.RestaurantId != targetRest.Id)
-                    {
-                        return null;
-                    }
-                }
-                else
-                {
-                    return null;
+                    else
+                        return (null, "SuperAdmin: El RUC ingresado no existe. Verifíquelo para administrar esa empresa.");
                 }
             }
 
             var token = GenerateJwtToken(user, activeRestaurantId);
 
-            return new LoginResponseDTO
+            return (new LoginResponseDTO
             {
                 Token = token,
                 Role = user.Role.ToString()!
-            };
+            }, string.Empty);
         }
 
         private string GenerateJwtToken(User user, int restaurantId)
