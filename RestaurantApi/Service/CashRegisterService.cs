@@ -1,0 +1,76 @@
+﻿using Microsoft.EntityFrameworkCore;
+using RestaurantApi.Models;
+using RestaurantApi.Repositories.IRepositories;
+using RestaurantApi.Service.IService;
+
+namespace RestaurantApi.Service
+{
+    public class CashRegisterService(
+        IGenericRepository<CashRegister> cashRepository,
+        IGenericRepository<Payment> paymentRepository
+        ) : ICashRegisterService
+    {
+        public async Task<CashRegister?> GetOpenRegisterAsync(int restaurantId)
+        {
+            return await cashRepository.GetQueryable()
+                .FirstOrDefaultAsync(c => c.IsOpen && c.RestaurantId == restaurantId);
+        }
+
+        public async Task<bool> OpenRegisterAsync(int userId, decimal openingBalance, int restaurantId)
+        {
+            using var transaction = await cashRepository.BeginTransactionAsync(System.Data.IsolationLevel.Serializable);
+            try
+            {
+                var currentOpen = await GetOpenRegisterAsync(restaurantId);
+                if (currentOpen != null)
+                {
+                    await transaction.RollbackAsync();
+                    return false;
+                }
+
+                var newRegister = new CashRegister
+                {
+                    UserId = userId,
+                    OpeningBalance = openingBalance,
+                    OpenedAt = DateTime.UtcNow,
+                    IsOpen = true,
+                    RestaurantId = restaurantId
+                };
+
+                await cashRepository.AddAsync(newRegister);
+                await cashRepository.SaveChangesAsync();
+                await transaction.CommitAsync();
+
+                return true;
+            }
+            catch (Exception)
+            {
+                await transaction.RollbackAsync();
+                return false;
+            }
+        }
+
+        public async Task<bool> CloseRegisterAsync(int userId, decimal actualBalance, string? notes, int restaurantId)
+        {
+            var currentOpen = await GetOpenRegisterAsync(restaurantId);
+            if (currentOpen == null) return false;
+
+            var cashPaymentsTotal = await paymentRepository.GetQueryable()
+                .Where(p => p.CashRegisterId == currentOpen.Id &&
+                            p.PaymentMethodId == 1)
+                .SumAsync(p => (decimal?)p.Amount) ?? 0m;
+
+            decimal expectedCashBalance = currentOpen.OpeningBalance + cashPaymentsTotal;
+
+            currentOpen.ClosingBalance = actualBalance;
+            currentOpen.Discrepancy = actualBalance - expectedCashBalance;
+            currentOpen.ClosedAt = DateTime.UtcNow;
+            currentOpen.IsOpen = false;
+            currentOpen.Notes = notes;
+
+            cashRepository.Update(currentOpen);
+            await cashRepository.SaveChangesAsync();
+            return true;
+        }
+    }
+}
