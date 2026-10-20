@@ -204,4 +204,6 @@ app.UseAuthorization();
 app.MapHub<RestaurantApi.Hubs.OrderHub>("/orderHub");
 app.MapControllers();
 
+app.MapGet("/", () => "¡La API de RestaurantApp está en línea y funcionando!");
+
 app.Run();
