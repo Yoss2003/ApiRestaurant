@@ -15,7 +15,7 @@ var builder = WebApplication.CreateBuilder(args);
 
 // Configuración de Base de Datos
 builder.Services.AddDbContext<RestaurantDbContext>(options =>
-    options.UseNpgsql(builder.Configuration.GetConnectionString("SonqoDbConnection")));
+    options.UseNpgsql(builder.Configuration.GetConnectionString("RestaurantDbConnection")));
 
 // Inyección de Dependencias
 builder.Services.AddScoped(typeof(RestaurantApi.Repositories.IRepositories.IGenericRepository<>), typeof(RestaurantApi.Repositories.GenericRepository<>));
