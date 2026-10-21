@@ -4,6 +4,7 @@ using RestaurantApi.Models.DTOs;
 using RestaurantApi.Service.IService;
 using System;
 using System.Linq;
+using System.Security.Claims;
 using System.Threading.Tasks;
 
 namespace RestaurantApi.Controllers
@@ -11,8 +12,14 @@ namespace RestaurantApi.Controllers
     [Route("api/[controller]")]
     [ApiController]
     [Authorize(Policy = "RequireStaff")]
-    public class TablesController(ITableService tableService) : ControllerBase
+    public class TablesController(ITableService tableService, IAuditService auditService) : ControllerBase
     {
+        private int GetCurrentUserId()
+        {
+            var claim = User.Claims.FirstOrDefault(c => c.Type == ClaimTypes.NameIdentifier);
+            return claim != null && int.TryParse(claim.Value, out int id) ? id : 0;
+        }
+
         private int GetCurrentRestaurantId()
         {
             var claim = User.Claims.FirstOrDefault(c => c.Type == "RestaurantId");
@@ -36,6 +43,7 @@ namespace RestaurantApi.Controllers
 
             int restaurantId = GetCurrentRestaurantId();
             var newTable = await tableService.CreateTableAsync(dto, restaurantId);
+            await auditService.LogActionAsync(restaurantId, GetCurrentUserId(), "CREATE", "Table", newTable.Id.ToString(), $"Creó la mesa '{dto.Number}' (Capacidad: {dto.Capacity})");
             return Ok(new { Message = "Mesa creada exitosamente.", Table = newTable });
         }
 
@@ -51,6 +59,7 @@ namespace RestaurantApi.Controllers
             if (updatedTable == null)
                 return NotFound("La mesa no existe o fue eliminada.");
 
+            await auditService.LogActionAsync(restaurantId, GetCurrentUserId(), "UPDATE", "Table", id.ToString(), $"Editó la mesa a '{dto.Number}' (Capacidad: {dto.Capacity})");
             return Ok(new { Message = "Mesa actualizada exitosamente.", Table = updatedTable });
         }
 
@@ -65,6 +74,7 @@ namespace RestaurantApi.Controllers
                 if (!success)
                     return NotFound("La mesa no existe o ya fue eliminada.");
 
+                await auditService.LogActionAsync(restaurantId, GetCurrentUserId(), "DELETE", "Table", id.ToString(), $"Eliminó la mesa con ID {id}");
                 return Ok(new { Message = "Mesa eliminada correctamente." });
             }
             catch (InvalidOperationException ex)

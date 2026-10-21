@@ -11,16 +11,19 @@ namespace RestaurantApi.Data
         public DbSet<Restaurant> Restaurants { get; set; }
         public DbSet<RecipeDetails> RecipeDetails { get; set; }
         public DbSet<RestaurantSettings> RestaurantSettings { get; set; }
+        public DbSet<AuditLog> AuditLogs { get; set; }
 
         // Nuevos DbSets para Mesas y Pedidos
         public DbSet<Table> Tables { get; set; }
         public DbSet<Order> Orders { get; set; }
         public DbSet<CashRegister> CashRegisters { get; set; }
         public DbSet<OrderDetail> OrderDetails { get; set; }
+        public DbSet<DailySalesSummary> DailySalesSummaries { get; set; }
 
         // DbSets para Pagos
         public DbSet<PaymentMethod> PaymentMethods { get; set; }
         public DbSet<Payment> Payments { get; set; }
+        public DbSet<CashMovement> CashMovements { get; set; }
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
@@ -47,8 +50,11 @@ namespace RestaurantApi.Data
             modelBuilder.Entity<Table>().ToTable("mesas");
             modelBuilder.Entity<Order>().ToTable("pedidos");
             modelBuilder.Entity<OrderDetail>().ToTable("pedido_detalles");
+            modelBuilder.Entity<DailySalesSummary>().ToTable("resumen_ventas_diarias");
             modelBuilder.Entity<PaymentMethod>().ToTable("metodos_pago");
             modelBuilder.Entity<Payment>().ToTable("pagos");
+            modelBuilder.Entity<CashMovement>().ToTable("movimientos_caja");
+            modelBuilder.Entity<AuditLog>().ToTable("logs_auditoria");
 
             // ==========================================
             // SEED DATA: MÉTODOS DE PAGO POR DEFECTO

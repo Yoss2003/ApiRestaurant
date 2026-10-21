@@ -34,5 +34,6 @@ namespace RestaurantApi.Models
         public string? Notes { get; set; }
         public int RestaurantId { get; set; }
         public Restaurant? Restaurant { get; set; }
+        public ICollection<CashMovement> Movements { get; set; } = [];
     }
 }

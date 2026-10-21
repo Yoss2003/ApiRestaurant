@@ -8,7 +8,7 @@ namespace RestaurantApi.Service.IService
         Task<bool> UpdateOrderDetailStatusAsync(int detailId, string status, string userRole, int restaurantId);
         Task<IEnumerable<KitchenOrderDTO>> GetKitchenOrdersAsync(int restaurantId);
         Task<ActiveOrderDTO?> GetActiveOrderAsync(int tableId, int restaurantId);
-        Task<bool> PayOrderAsync(int orderId, PayOrderDTO paymentData, int restaurantId, int userId);
+        Task<(bool Success, string ErrorMessage)> PayOrderAsync(int orderId, PayOrderDTO paymentData, int restaurantId, int userId);
         Task<DashboardDTO> GetDashboardMetricsAsync(int restaurantId);
     }
 }

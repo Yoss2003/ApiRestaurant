@@ -45,6 +45,12 @@ namespace RestaurantApi.Service
                     }
                 }
                 if (maxAvailable == int.MaxValue) maxAvailable = 0;
+                int inventoryYield = maxAvailable;
+
+                if (dish.DailyStock.HasValue)
+                {
+                    maxAvailable = Math.Min(inventoryYield, dish.DailyStock.Value);
+                }
 
                 decimal portionCost = totalCost / portions;
                 decimal margin = dish.Price > 0 ? ((dish.Price - portionCost) / dish.Price) * 100m : 0m;
@@ -58,7 +64,12 @@ namespace RestaurantApi.Service
                     YieldPortions = portions,
                     RecipeCost = Math.Round(portionCost, 2),
                     ProfitMargin = Math.Round(margin, 2),
-                    MaxAvailable = maxAvailable
+                    MaxAvailable = maxAvailable,
+                    DailyStock = dish.DailyStock,
+                    InventoryYield = inventoryYield,
+                    IsFeaturedGeneral = dish.IsFeaturedGeneral,
+                    IsTopWeekly = dish.IsTopWeekly,
+                    IsTopMonthly = dish.IsTopMonthly
                 });
             }
             return responseList;
@@ -123,6 +134,7 @@ namespace RestaurantApi.Service
             dish.Name = dishDto.Name;
             dish.Category = dishDto.Category;
             dish.Price = dishDto.Price;
+            dish.DailyStock = dishDto.DailyStock;
             dishRepository.Update(dish);
             return await dishRepository.SaveChangesAsync();
         }

@@ -1,10 +1,8 @@
 ﻿using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;
-using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
-using RestaurantApi.Hubs;
 using RestaurantApi.Models;
 using RestaurantApi.Models.DTOs;
 using RestaurantApi.Repositories.IRepositories;
@@ -92,7 +90,6 @@ namespace RestaurantApi.Controllers
             }
             else
             {
-                // P05: Cliente anónimo. Debe tener el token del QR.
                 var sessionType = User.Claims.FirstOrDefault(c => c.Type == "SessionType")?.Value;
                 if (sessionType != "PublicQR")
                 {
@@ -154,10 +151,12 @@ namespace RestaurantApi.Controllers
             int restaurantId = GetCurrentRestaurantId();
             int userId = GetCurrentUserId();
 
-            var success = await orderService.PayOrderAsync(orderId, paymentData, restaurantId, userId);
+            var (success, errorMessage) = await orderService.PayOrderAsync(orderId, paymentData, restaurantId, userId);
 
             if (!success)
-                return BadRequest(new { message = "No se pudo cobrar. Verifique orden, concurrencia y estado de caja." });
+            {
+                return BadRequest(new { message = errorMessage });
+            }
 
             return Ok(new { message = "Orden cobrada y mesa liberada exitosamente." });
         }

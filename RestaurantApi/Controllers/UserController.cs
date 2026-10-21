@@ -9,8 +9,14 @@ namespace RestaurantApi.Controllers
     [Route("api/[controller]")]
     [ApiController]
     [Authorize(Policy = "RequireAdmin")]
-    public class UsersController(IAuthService authService) : ControllerBase
+    public class UsersController(IAuthService authService, IAuditService auditService) : ControllerBase
     {
+        private int GetCurrentUserId()
+        {
+            var claim = User.Claims.FirstOrDefault(c => c.Type == ClaimTypes.NameIdentifier);
+            return claim != null && int.TryParse(claim.Value, out int id) ? id : 0;
+        }
+
         private int GetCurrentRestaurantId()
         {
             var claim = User.Claims.FirstOrDefault(c => c.Type == "RestaurantId");
@@ -41,6 +47,8 @@ namespace RestaurantApi.Controllers
             {
                 return BadRequest(new { message = "El nombre de usuario ya está en uso o no tiene los permisos suficientes." });
             }
+
+            await auditService.LogActionAsync(restaurantId, GetCurrentUserId(), "CREATE", "User", newUser.Id.ToString(), $"Creó al usuario {dto.Username} con rol {dto.Role}");
             return Ok(newUser);
         }
 
@@ -69,6 +77,8 @@ namespace RestaurantApi.Controllers
             {
                 return BadRequest(new { message = "No se pudo eliminar el usuario." });
             }
+
+            await auditService.LogActionAsync(restaurantId, GetCurrentUserId(), "DELETE", "User", id.ToString(), $"Desactivó o eliminó al usuario con ID {id}");
             return Ok(new { message = "Usuario eliminado correctamente." });
         }
     }

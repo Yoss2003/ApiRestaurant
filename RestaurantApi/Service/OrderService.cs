@@ -103,6 +103,17 @@ namespace RestaurantApi.Service
                 {
                     if (item.Quantity <= 0 || !validDishes.ContainsKey(item.DishId)) continue;
                     var dish = validDishes[item.DishId];
+
+                    if (dish.DailyStock.HasValue)
+                    {
+                        if (dish.DailyStock.Value < item.Quantity)
+                        {
+                            return 0;
+                        }
+                        dish.DailyStock -= item.Quantity;
+                        dishRepository.Update(dish);
+                    }
+
                     var subTotal = dish.Price * item.Quantity;
 
                     activeOrder.TotalAmount += subTotal;
@@ -117,6 +128,13 @@ namespace RestaurantApi.Service
                         Status = "Pending"
                     });
                     DeductInventory(dish, item.Quantity, recipes, ingredients);
+
+                    if (dish.DailyStock.HasValue)
+                    {
+                        dish.DailyStock -= item.Quantity;
+                        if (dish.DailyStock < 0) dish.DailyStock = 0;
+                        dishRepository.Update(dish);
+                    }
                 }
                 orderRepository.Update(activeOrder);
 
@@ -158,6 +176,13 @@ namespace RestaurantApi.Service
                     };
                     newOrder.OrderDetails.Add(orderDetail);
                     DeductInventory(dish, item.Quantity, recipes, ingredients);
+
+                    if (dish.DailyStock.HasValue)
+                    {
+                        dish.DailyStock -= item.Quantity;
+                        if (dish.DailyStock < 0) dish.DailyStock = 0;
+                        dishRepository.Update(dish);
+                    }
                 }
 
                 if (newOrder.OrderDetails.Count == 0) return 0;
@@ -306,18 +331,17 @@ namespace RestaurantApi.Service
             return dto;
         }
 
-        public async Task<bool> PayOrderAsync(int orderId, PayOrderDTO paymentData, int restaurantId, int userId)
+        public async Task<(bool Success, string ErrorMessage)> PayOrderAsync(int orderId, PayOrderDTO paymentData, int restaurantId, int userId)
         {
             using var transaction = await orderRepository.BeginTransactionAsync(System.Data.IsolationLevel.Serializable);
             try
             {
                 var openRegister = await cashRegisterRepository.GetQueryable()
                     .FirstOrDefaultAsync(c => c.RestaurantId == restaurantId && c.IsOpen);
-
                 if (openRegister == null)
                 {
                     await transaction.RollbackAsync();
-                    return false;
+                    return (false, "No se puede cobrar: La caja chica está cerrada. Abra un turno primero.");
                 }
 
                 var order = await orderRepository.GetQueryable()
@@ -329,12 +353,11 @@ namespace RestaurantApi.Service
                 if (order == null || order.Status == OrderStatus.Paid || order.Status == OrderStatus.Cancelled)
                 {
                     await transaction.RollbackAsync();
-                    return false;
+                    return (false, "El pedido no existe, o ya fue cobrado/cancelado.");
                 }
 
                 var activeMethods = await paymentMethodRepository.GetAllAsync(m => m.IsActive);
                 var activeMethodIds = activeMethods.Select(m => m.Id).ToList();
-
                 bool isSplitPayment = paymentData.SplitPayments != null && paymentData.SplitPayments.Any();
 
                 if (isSplitPayment)
@@ -342,7 +365,7 @@ namespace RestaurantApi.Service
                     if (paymentData.SplitPayments!.Any(sp => !activeMethodIds.Contains(sp.PaymentMethodId)))
                     {
                         await transaction.RollbackAsync();
-                        return false;
+                        return (false, "Uno o más métodos de pago seleccionados no son válidos.");
                     }
                 }
                 else
@@ -350,7 +373,7 @@ namespace RestaurantApi.Service
                     if (!activeMethodIds.Contains(paymentData.PrimaryPaymentMethodId))
                     {
                         await transaction.RollbackAsync();
-                        return false;
+                        return (false, "El método de pago seleccionado es inválido.");
                     }
                 }
 
@@ -359,6 +382,7 @@ namespace RestaurantApi.Service
 
                 decimal amountAlreadyPaid = order.Payments.Sum(p => Math.Round(p.Amount, 2, MidpointRounding.AwayFromZero));
                 decimal remainingBalance = calculatedTotal - amountAlreadyPaid;
+
                 decimal incomingPaymentTotal = isSplitPayment
                     ? paymentData.SplitPayments!.Sum(p => Math.Round(p.Amount, 2, MidpointRounding.AwayFromZero))
                     : Math.Round(paymentData.TotalAmountPaid, 2, MidpointRounding.AwayFromZero);
@@ -366,7 +390,7 @@ namespace RestaurantApi.Service
                 if (incomingPaymentTotal != remainingBalance)
                 {
                     await transaction.RollbackAsync();
-                    return false;
+                    return (false, $"Descuadre matemático: El sistema intentó pagar S/ {incomingPaymentTotal} pero la mesa debe S/ {remainingBalance}.");
                 }
 
                 if (isSplitPayment)
@@ -415,14 +439,14 @@ namespace RestaurantApi.Service
                 {
                     await orderHub.Clients.Group(restaurantId.ToString()).SendAsync("ReceiveOrderUpdate", new { orderId = order.Id, type = "ORDER_PAID" });
                 }
-                catch { /* Ignoramos fallos de WebSocket para no mentirle al cajero sobre el pago exitoso */ }
+                catch { /* Ignoramos fallos de WebSocket */ }
 
-                return true;
+                return (true, string.Empty);
             }
             catch (Exception)
             {
                 await transaction.RollbackAsync();
-                return false;
+                return (false, "Error interno del servidor al intentar procesar el pago.");
             }
         }
 

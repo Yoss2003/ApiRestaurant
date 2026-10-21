@@ -22,6 +22,95 @@ namespace RestaurantApi.Migrations
 
             NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
 
+            modelBuilder.Entity("RestaurantApi.Models.AuditLog", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<string>("ActionType")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<string>("Description")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("EntityId")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("character varying(50)");
+
+                    b.Property<string>("EntityName")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<int>("RestaurantId")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime>("Timestamp")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("UserId")
+                        .HasColumnType("integer");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("RestaurantId");
+
+                    b.HasIndex("UserId");
+
+                    b.ToTable("logs_auditoria", (string)null);
+                });
+
+            modelBuilder.Entity("RestaurantApi.Models.CashMovement", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<decimal>("Amount")
+                        .HasColumnType("decimal(18,2)");
+
+                    b.Property<int>("CashRegisterId")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime>("MovementDate")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("PaymentMethodId")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("Reason")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<string>("Type")
+                        .IsRequired()
+                        .HasMaxLength(10)
+                        .HasColumnType("character varying(10)");
+
+                    b.Property<int>("UserId")
+                        .HasColumnType("integer");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CashRegisterId");
+
+                    b.HasIndex("PaymentMethodId");
+
+                    b.HasIndex("UserId");
+
+                    b.ToTable("movimientos_caja", (string)null);
+                });
+
             modelBuilder.Entity("RestaurantApi.Models.CashRegister", b =>
                 {
                     b.Property<int>("Id")
@@ -66,6 +155,35 @@ namespace RestaurantApi.Migrations
                     b.ToTable("CashRegisters");
                 });
 
+            modelBuilder.Entity("RestaurantApi.Models.DailySalesSummary", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<DateTime>("Date")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("DishId")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("RestaurantId")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("TotalQuantitySold")
+                        .HasColumnType("integer");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("DishId");
+
+                    b.HasIndex("RestaurantId");
+
+                    b.ToTable("resumen_ventas_diarias", (string)null);
+                });
+
             modelBuilder.Entity("RestaurantApi.Models.Dish", b =>
                 {
                     b.Property<int>("Id")
@@ -78,7 +196,19 @@ namespace RestaurantApi.Migrations
                         .IsRequired()
                         .HasColumnType("text");
 
+                    b.Property<int?>("DailyStock")
+                        .HasColumnType("integer");
+
                     b.Property<bool>("IsAvailable")
+                        .HasColumnType("boolean");
+
+                    b.Property<bool>("IsFeaturedGeneral")
+                        .HasColumnType("boolean");
+
+                    b.Property<bool>("IsTopMonthly")
+                        .HasColumnType("boolean");
+
+                    b.Property<bool>("IsTopWeekly")
                         .HasColumnType("boolean");
 
                     b.Property<string>("Name")
@@ -467,6 +597,52 @@ namespace RestaurantApi.Migrations
                     b.ToTable("usuarios", (string)null);
                 });
 
+            modelBuilder.Entity("RestaurantApi.Models.AuditLog", b =>
+                {
+                    b.HasOne("RestaurantApi.Models.Restaurant", "Restaurant")
+                        .WithMany()
+                        .HasForeignKey("RestaurantId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("RestaurantApi.Models.User", "User")
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Restaurant");
+
+                    b.Navigation("User");
+                });
+
+            modelBuilder.Entity("RestaurantApi.Models.CashMovement", b =>
+                {
+                    b.HasOne("RestaurantApi.Models.CashRegister", "CashRegister")
+                        .WithMany("Movements")
+                        .HasForeignKey("CashRegisterId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("RestaurantApi.Models.PaymentMethod", "PaymentMethod")
+                        .WithMany()
+                        .HasForeignKey("PaymentMethodId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("RestaurantApi.Models.User", "User")
+                        .WithMany()
+                        .HasForeignKey("UserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("CashRegister");
+
+                    b.Navigation("PaymentMethod");
+
+                    b.Navigation("User");
+                });
+
             modelBuilder.Entity("RestaurantApi.Models.CashRegister", b =>
                 {
                     b.HasOne("RestaurantApi.Models.Restaurant", "Restaurant")
@@ -484,6 +660,25 @@ namespace RestaurantApi.Migrations
                     b.Navigation("Restaurant");
 
                     b.Navigation("User");
+                });
+
+            modelBuilder.Entity("RestaurantApi.Models.DailySalesSummary", b =>
+                {
+                    b.HasOne("RestaurantApi.Models.Dish", "Dish")
+                        .WithMany()
+                        .HasForeignKey("DishId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("RestaurantApi.Models.Restaurant", "Restaurant")
+                        .WithMany()
+                        .HasForeignKey("RestaurantId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Dish");
+
+                    b.Navigation("Restaurant");
                 });
 
             modelBuilder.Entity("RestaurantApi.Models.Dish", b =>
@@ -618,6 +813,11 @@ namespace RestaurantApi.Migrations
                         .HasForeignKey("RestaurantId");
 
                     b.Navigation("Restaurant");
+                });
+
+            modelBuilder.Entity("RestaurantApi.Models.CashRegister", b =>
+                {
+                    b.Navigation("Movements");
                 });
 
             modelBuilder.Entity("RestaurantApi.Models.Dish", b =>

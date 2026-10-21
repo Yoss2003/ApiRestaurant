@@ -26,6 +26,7 @@ builder.Services.AddScoped<ITableService, TableService>();
 builder.Services.AddScoped<ICashRegisterService, CashRegisterService>();
 builder.Services.AddScoped<IAuthService, AuthService>();
 builder.Services.AddScoped<IPasswordHasher<User>, PasswordHasher<User>>();
+builder.Services.AddScoped<IAuditService, AuditService>();
 builder.Services.AddSignalR();
 
 // RA40: Valores por defecto coherentes para el JWT

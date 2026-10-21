@@ -10,7 +10,10 @@
         public int YieldPortions { get; set; } = 1;
         public int RestaurantId { get; set; }
         public Restaurant? Restaurant { get; set; }
-
+        public bool IsFeaturedGeneral { get; set; } = false;
+        public bool IsTopWeekly { get; set; } = false;
+        public bool IsTopMonthly { get; set; } = false;
+        public int? DailyStock { get; set; }
         public ICollection<RecipeDetails> Recipe { get; set; } = [];
     }
 }
