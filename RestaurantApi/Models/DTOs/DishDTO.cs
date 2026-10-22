@@ -14,6 +14,8 @@ namespace RestaurantApi.Models.DTOs
         [Range(0.01, double.MaxValue, ErrorMessage = "El precio debe ser mayor a 0.")]
         public decimal Price { get; set; }
         public int? DailyStock { get; set; }
+        public string? Description { get; set; }
+        public string? ImageUrl { get; set; }
     }
 
     public class RecipeItemDTO
@@ -48,6 +50,8 @@ namespace RestaurantApi.Models.DTOs
         public int MaxAvailable { get; set; }
         public bool IsFeaturedGeneral { get; set; }
         public int? DailyStock { get; set; }
+        public string? Description { get; set; }
+        public string? ImageUrl { get; set; }
         public int InventoryYield { get; set; }
         public bool IsTopWeekly { get; set; }
         public bool IsTopMonthly { get; set; }

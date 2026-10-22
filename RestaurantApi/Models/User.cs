@@ -23,5 +23,8 @@ namespace RestaurantApi.Models
 
         public int? RestaurantId { get; set; }
         public Restaurant? Restaurant { get; set; }
+
+        [MaxLength(255)]
+        public string? CurrentSessionId { get; set; }
     }
 }

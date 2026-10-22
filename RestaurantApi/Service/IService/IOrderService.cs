@@ -9,6 +9,6 @@ namespace RestaurantApi.Service.IService
         Task<IEnumerable<KitchenOrderDTO>> GetKitchenOrdersAsync(int restaurantId);
         Task<ActiveOrderDTO?> GetActiveOrderAsync(int tableId, int restaurantId);
         Task<(bool Success, string ErrorMessage)> PayOrderAsync(int orderId, PayOrderDTO paymentData, int restaurantId, int userId);
-        Task<DashboardDTO> GetDashboardMetricsAsync(int restaurantId);
+        Task<DashboardDTO> GetDashboardMetricsAsync(int restaurantId, DateTime? startDate = null, DateTime? endDate = null);
     }
 }

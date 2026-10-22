@@ -10,7 +10,7 @@ namespace RestaurantApi.Models
 
         [Required]
         [MaxLength(100)]
-        public string Name { get; set; } = string.Empty; // Ej: "Sonqo - Sede Centro"
+        public string Name { get; set; } = string.Empty;
 
         [MaxLength(20)]
         public string Ruc { get; set; } = string.Empty;
@@ -19,6 +19,10 @@ namespace RestaurantApi.Models
         public string Address { get; set; } = string.Empty;
 
         public bool IsActive { get; set; } = true;
+
+        public int MaxUsers { get; set; } = 5;
+        public DateTime? LicenseExpiresAt { get; set; }
+        public bool IsLicenseSuspended { get; set; } = false;
 
         public ICollection<User> Users { get; set; } = [];
         public ICollection<Table> Tables { get; set; } = [];

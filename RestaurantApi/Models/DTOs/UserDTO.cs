@@ -23,6 +23,7 @@ namespace RestaurantApi.Models.DTOs
 
         [Required]
         public string? Role { get; set; }
+        public int? TrialDays { get; set; }
     }
 
     // DTO para actualizar un usuario existente

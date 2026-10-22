@@ -163,10 +163,10 @@ namespace RestaurantApi.Controllers
 
         [HttpGet("dashboard")]
         [Authorize(Policy = "RequireAdmin")]
-        public async Task<IActionResult> GetDashboardMetrics()
+        public async Task<IActionResult> GetDashboardMetrics([FromQuery] DateTime? startDate, [FromQuery] DateTime? endDate)
         {
             int restaurantId = GetCurrentRestaurantId();
-            var metrics = await orderService.GetDashboardMetricsAsync(restaurantId);
+            var metrics = await orderService.GetDashboardMetricsAsync(restaurantId, startDate, endDate);
             return Ok(metrics);
         }
     }

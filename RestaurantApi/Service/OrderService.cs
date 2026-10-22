@@ -450,13 +450,32 @@ namespace RestaurantApi.Service
             }
         }
 
-        public async Task<DashboardDTO> GetDashboardMetricsAsync(int restaurantId)
+        public async Task<DashboardDTO> GetDashboardMetricsAsync(int restaurantId, DateTime? startDate = null, DateTime? endDate = null)
         {
-            var today = DateTime.UtcNow.Date;
+            DateTime start;
+            if (startDate.HasValue)
+            {
+                start = DateTime.SpecifyKind(startDate.Value.Date, DateTimeKind.Utc);
+            }
+            else
+            {
+                start = DateTime.SpecifyKind(DateTime.UtcNow.Date, DateTimeKind.Utc);
+            }
+
+            DateTime end;
+            if (endDate.HasValue)
+            {
+                end = DateTime.SpecifyKind(endDate.Value.Date, DateTimeKind.Utc).AddDays(1).AddTicks(-1);
+            }
+            else
+            {
+                end = DateTime.SpecifyKind(DateTime.UtcNow.Date, DateTimeKind.Utc).AddDays(1).AddTicks(-1);
+            }
+
             var paidOrders = await orderRepository.GetAllAsync(o =>
                 o.RestaurantId == restaurantId &&
                 o.Status == OrderStatus.Paid &&
-                o.OrderDate >= today);
+                o.OrderDate >= start && o.OrderDate <= end);
 
             var orderIds = paidOrders.Select(o => o.Id).ToList();
 
@@ -467,6 +486,7 @@ namespace RestaurantApi.Service
             };
 
             dashboard.AverageTicket = dashboard.TablesServed > 0 ? dashboard.TotalSales / dashboard.TablesServed : 0;
+
             if (dashboard.TablesServed == 0) return dashboard;
 
             var allPayments = await paymentRepository.GetAllAsync(p => orderIds.Contains(p.OrderId));

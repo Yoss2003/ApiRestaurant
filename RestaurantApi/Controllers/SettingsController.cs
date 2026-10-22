@@ -1,12 +1,11 @@
 ﻿using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.EntityFrameworkCore;
 using RestaurantApi.Models;
 using RestaurantApi.Models.DTOs;
 using RestaurantApi.Repositories.IRepositories;
-using System.Linq;
+using RestaurantApi.Service.IService;
 using System.Security.Claims;
-using System.Threading.Tasks;
+using Microsoft.AspNetCore.Identity;
 
 namespace RestaurantApi.Controllers
 {
@@ -38,6 +37,27 @@ namespace RestaurantApi.Controllers
                 Ruc = settings.Ruc,
                 Address = settings.Address
             });
+        }
+
+        [HttpGet("all")]
+        public async Task<IActionResult> GetAllRestaurants()
+        {
+            var roleClaim = User.Claims.FirstOrDefault(c => c.Type == ClaimTypes.Role)?.Value;
+            if (roleClaim != "SuperAdmin")
+                return StatusCode(403, new { message = "Acceso denegado. Solo el SuperAdmin puede ver esta lista." });
+
+            var restaurants = await restaurantRepo.GetAllAsync();
+
+            var result = restaurants.Select(r => new {
+                r.Id,
+                r.Name,
+                r.Ruc,
+                r.IsLicenseSuspended,
+                r.LicenseExpiresAt,
+                r.MaxUsers
+            });
+
+            return Ok(result);
         }
 
         [HttpPost]
@@ -90,6 +110,59 @@ namespace RestaurantApi.Controllers
             await restaurantRepo.SaveChangesAsync();
 
             return Ok(new { message = "Nueva empresa creada exitosamente.", restaurantId = newRestaurant.Id });
+        }
+
+        [HttpPost("update-limits/{restaurantId}")]
+        public async Task<IActionResult> UpdateLicenseLimits(
+            int restaurantId,
+            [FromBody] UpdateLimitsDTO dto,
+            [FromServices] IGenericRepository<User> userRepo,
+            [FromServices] IPasswordHasher<User> passwordHasher)
+        {
+            var roleClaim = User.Claims.FirstOrDefault(c => c.Type == ClaimTypes.Role)?.Value;
+            var currentUsername = User.Claims.FirstOrDefault(c => c.Type == ClaimTypes.Name)?.Value;
+
+            if (roleClaim != "SuperAdmin")
+                return StatusCode(403, new { message = "Solo el SuperAdmin puede cambiar límites." });
+
+            var users = await userRepo.GetAllAsync(u => u.Username == currentUsername);
+            var currentUser = users.FirstOrDefault();
+
+            if (currentUser == null)
+                return Unauthorized(new { message = "Usuario no encontrado." });
+
+            var verificationResult = passwordHasher.VerifyHashedPassword(currentUser, currentUser.PasswordHash, dto.SuperAdminPassword);
+
+            if (verificationResult == PasswordVerificationResult.Failed)
+                return Unauthorized(new { message = "Contraseña de SuperAdmin incorrecta. Operación denegada." });
+
+            var restaurant = await restaurantRepo.GetByIdAsync(restaurantId);
+            if (restaurant == null) return NotFound("Restaurante no encontrado.");
+
+            restaurant.MaxUsers = dto.MaxUsers;
+            restaurantRepo.Update(restaurant);
+            await restaurantRepo.SaveChangesAsync();
+
+            return Ok(new { message = $"Límite actualizado a {dto.MaxUsers} usuarios." });
+        }
+
+        [HttpPost("set-trial/{restaurantId}")]
+        public async Task<IActionResult> SetTrialPeriod(int restaurantId, [FromBody] int trialDays)
+        {
+            var roleClaim = User.Claims.FirstOrDefault(c => c.Type == ClaimTypes.Role)?.Value;
+            if (roleClaim != "SuperAdmin")
+                return StatusCode(403, new { message = "Acceso denegado." });
+
+            var restaurant = await restaurantRepo.GetByIdAsync(restaurantId);
+            if (restaurant == null) return NotFound("Restaurante no encontrado.");
+
+            restaurant.LicenseExpiresAt = DateTime.UtcNow.AddDays(trialDays);
+            restaurant.IsLicenseSuspended = false;
+
+            restaurantRepo.Update(restaurant);
+            await restaurantRepo.SaveChangesAsync();
+
+            return Ok(new { message = $"Periodo de prueba de {trialDays} días activado con éxito hasta el {restaurant.LicenseExpiresAt:dd/MM/yyyy}." });
         }
     }
 }

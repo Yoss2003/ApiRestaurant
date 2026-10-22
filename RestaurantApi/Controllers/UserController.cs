@@ -42,10 +42,11 @@ namespace RestaurantApi.Controllers
             if (!ModelState.IsValid) return BadRequest(ModelState);
 
             int restaurantId = GetCurrentRestaurantId();
-            var newUser = await authService.CreateUserAsync(dto, restaurantId, GetCurrentRole());
+            var (newUser, errorMessage) = await authService.CreateUserAsync(dto, restaurantId, GetCurrentRole());
+            
             if (newUser == null)
             {
-                return BadRequest(new { message = "El nombre de usuario ya está en uso o no tiene los permisos suficientes." });
+                return BadRequest(new { message = errorMessage });
             }
 
             await auditService.LogActionAsync(restaurantId, GetCurrentUserId(), "CREATE", "User", newUser.Id.ToString(), $"Creó al usuario {dto.Username} con rol {dto.Role}");

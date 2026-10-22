@@ -41,6 +41,9 @@ namespace RestaurantApi.Controllers
 
             if (result == null)
             {
+                if (errorMessage == "DUPLICATE_SESSION")
+                    return StatusCode(409, new { message = "Ya tienes una sesión abierta en otro dispositivo. ¿Deseas cerrarla e ingresar aquí?" });
+
                 return Unauthorized(new { message = errorMessage });
             }
 
@@ -77,6 +80,20 @@ namespace RestaurantApi.Controllers
 
             await userRepo.SaveChangesAsync();
             return Ok(new { message = "¡Listo! Ya puedes iniciar sesión con Admin y Admin123!" });
+        }
+
+        [HttpPost("logout")]
+        [Authorize]
+        public async Task<IActionResult> Logout()
+        {
+            var userIdClaim = User.Claims.FirstOrDefault(c => c.Type == ClaimTypes.NameIdentifier)?.Value;
+
+            if (int.TryParse(userIdClaim, out int userId))
+            {
+                await authService.LogoutAsync(userId);
+            }
+
+            return Ok(new { message = "Sesión cerrada correctamente y liberada." });
         }
     }
 }

@@ -6,6 +6,7 @@
         public string Username { get; set; } = string.Empty;
         public string Password { get; set; } = string.Empty;
         public string? Ruc { get; set; }
+        public bool ForceLogin { get; set; } = false;
     }
 
     // Lo que responde la API si las credenciales son correctas

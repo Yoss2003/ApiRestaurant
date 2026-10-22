@@ -14,6 +14,8 @@
         public bool IsTopWeekly { get; set; } = false;
         public bool IsTopMonthly { get; set; } = false;
         public int? DailyStock { get; set; }
+        public string? Description { get; set; }
+        public string? ImageUrl { get; set; }
         public ICollection<RecipeDetails> Recipe { get; set; } = [];
     }
 }

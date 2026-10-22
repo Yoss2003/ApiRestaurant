@@ -77,6 +77,7 @@ builder.Services.AddAuthentication(options =>
         {
             var userRepo = context.HttpContext.RequestServices.GetRequiredService<RestaurantApi.Repositories.IRepositories.IGenericRepository<User>>();
             var userIdClaim = context.Principal?.Claims.FirstOrDefault(c => c.Type == ClaimTypes.NameIdentifier)?.Value;
+            var sessionIdClaim = context.Principal?.Claims.FirstOrDefault(c => c.Type == "SessionId")?.Value;
 
             if (int.TryParse(userIdClaim, out int userId))
             {
@@ -84,6 +85,10 @@ builder.Services.AddAuthentication(options =>
                 if (user == null || !user.IsActive)
                 {
                     context.Fail("La cuenta ha sido desactivada o no tiene permisos vigentes.");
+                }
+                else if (user.CurrentSessionId != sessionIdClaim)
+                {
+                    context.Fail("Se cerró la sesión porque ingresaste desde otro dispositivo.");
                 }
             }
         }

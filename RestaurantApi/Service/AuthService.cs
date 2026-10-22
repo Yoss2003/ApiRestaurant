@@ -8,6 +8,7 @@ using RestaurantApi.Service.IService;
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 using System.Text;
+using Microsoft.EntityFrameworkCore;
 
 namespace RestaurantApi.Service
 {
@@ -68,17 +69,28 @@ namespace RestaurantApi.Service
                 if (string.IsNullOrWhiteSpace(loginDto.Ruc))
                     return (null, "El RUC de la empresa es obligatorio para su cuenta.");
 
-                var rests = await restaurantRepository.GetAllAsync(r => r.Ruc == loginDto.Ruc);
-                var targetRest = rests.FirstOrDefault();
+                var targetRest = await restaurantRepository.GetQueryable().FirstOrDefaultAsync(r => r.Ruc == loginDto.Ruc);
 
                 if (targetRest == null)
                     return (null, "El RUC ingresado no existe en nuestro sistema.");
 
-                if (!targetRest.IsActive)
-                    return (null, "La empresa asociada a este RUC se encuentra suspendida o inactiva.");
-
                 if (user.RestaurantId != targetRest.Id)
                     return (null, "Usted no pertenece a la empresa vinculada a este RUC.");
+
+                if (targetRest.IsLicenseSuspended)
+                    return (null, "La empresa se encuentra suspendida por falta de pago.");
+
+                if (targetRest.LicenseExpiresAt.HasValue)
+                {
+                    var limitDate = targetRest.LicenseExpiresAt.Value.AddDays(7);
+                    if (DateTime.UtcNow > limitDate)
+                    {
+                        targetRest.IsLicenseSuspended = true;
+                        restaurantRepository.Update(targetRest);
+                        await restaurantRepository.SaveChangesAsync();
+                        return (null, "Su licencia venció y la semana de gracia terminó. El sistema ha sido bloqueado.");
+                    }
+                }
 
                 activeRestaurantId = targetRest.Id;
             }
@@ -86,8 +98,7 @@ namespace RestaurantApi.Service
             {
                 if (!string.IsNullOrWhiteSpace(loginDto.Ruc))
                 {
-                    var rests = await restaurantRepository.GetAllAsync(r => r.Ruc == loginDto.Ruc);
-                    var targetRest = rests.FirstOrDefault();
+                    var targetRest = await restaurantRepository.GetQueryable().FirstOrDefaultAsync(r => r.Ruc == loginDto.Ruc);
 
                     if (targetRest != null)
                         activeRestaurantId = targetRest.Id;
@@ -95,6 +106,15 @@ namespace RestaurantApi.Service
                         return (null, "SuperAdmin: El RUC ingresado no existe. Verifíquelo para administrar esa empresa.");
                 }
             }
+
+            if (!string.IsNullOrEmpty(user.CurrentSessionId) && !loginDto.ForceLogin)
+            {
+                return (null, "DUPLICATE_SESSION");
+            }
+
+            user.CurrentSessionId = Guid.NewGuid().ToString();
+            userRepository.Update(user);
+            await userRepository.SaveChangesAsync();
 
             var token = GenerateJwtToken(user, activeRestaurantId);
 
@@ -117,7 +137,8 @@ namespace RestaurantApi.Service
                 new Claim(ClaimTypes.NameIdentifier, user.Id.ToString()),
                 new Claim(ClaimTypes.Name, user.Username),
                 new Claim(ClaimTypes.Role, user.Role.ToString()),
-                new Claim("RestaurantId", restaurantId.ToString())
+                new Claim("RestaurantId", restaurantId.ToString()),
+                new Claim("SessionId", user.CurrentSessionId ?? "")
             };
 
             var tokenDescriptor = new SecurityTokenDescriptor
@@ -150,11 +171,11 @@ namespace RestaurantApi.Service
             });
         }
 
-        public async Task<UserResponseDTO?> CreateUserAsync(UserCreateDTO dto, int adminRestaurantId, string adminRole)
+        public async Task<(UserResponseDTO? Result, string ErrorMessage)> CreateUserAsync(UserCreateDTO dto, int adminRestaurantId, string adminRole)
         {
             var usernameLower = dto.Username!.ToLower();
-            var exists = await userRepository.ExistsAsync(u => u.Username.ToLower() == usernameLower);
-            if (exists) return null;
+            if (await userRepository.ExistsAsync(u => u.Username.ToLower() == usernameLower))
+                return (null, "El nombre de usuario ya está en uso.");
 
             if (!Enum.TryParse<Role>(dto.Role, out var roleEnum))
             {
@@ -163,7 +184,27 @@ namespace RestaurantApi.Service
 
             if ((roleEnum == Role.SuperAdmin || roleEnum == Role.Admin) && adminRole != "SuperAdmin")
             {
-                return null;
+                return (null, "No tienes permisos para crear este tipo de usuario.");
+            }
+
+            var restaurant = await restaurantRepository.GetByIdAsync(adminRestaurantId);
+
+            if (restaurant != null)
+            {
+                var activeUsersCount = await userRepository.GetQueryable()
+                    .CountAsync(u => u.RestaurantId == adminRestaurantId && u.IsActive);
+
+                if (activeUsersCount >= restaurant.MaxUsers)
+                {
+                    return (null, $"Límite de licencias alcanzado. El plan solo permite {restaurant.MaxUsers} usuarios activos. Debes desactivar uno para crear otro.");
+                }
+
+                if (adminRole == "SuperAdmin" && dto.TrialDays.HasValue && dto.TrialDays.Value > 0)
+                {
+                    restaurant.LicenseExpiresAt = DateTime.UtcNow.AddDays(dto.TrialDays.Value);
+                    restaurant.IsLicenseSuspended = false;
+                    restaurantRepository.Update(restaurant);
+                }
             }
 
             var newUser = new User
@@ -179,7 +220,7 @@ namespace RestaurantApi.Service
             await userRepository.AddAsync(newUser);
             await userRepository.SaveChangesAsync();
 
-            return new UserResponseDTO { Id = newUser.Id, Username = newUser.Username, Role = newUser.Role.ToString() };
+            return (new UserResponseDTO { Id = newUser.Id, Username = newUser.Username, Role = newUser.Role.ToString() }, string.Empty);
         }
 
         public async Task<bool> UpdateUserAsync(int id, UserUpdateDTO dto, int adminRestaurantId, string adminRole)
@@ -230,6 +271,18 @@ namespace RestaurantApi.Service
             userRepository.Update(user);
             await userRepository.SaveChangesAsync();
             return true;
+        }
+        public async Task<bool> LogoutAsync(int userId)
+        {
+            var user = await userRepository.GetByIdAsync(userId);
+            if (user != null)
+            {
+                user.CurrentSessionId = null;
+                userRepository.Update(user);
+                await userRepository.SaveChangesAsync();
+                return true;
+            }
+            return false;
         }
     }
 }

@@ -66,6 +66,8 @@ namespace RestaurantApi.Service
                     ProfitMargin = Math.Round(margin, 2),
                     MaxAvailable = maxAvailable,
                     DailyStock = dish.DailyStock,
+                    Description = dish.Description,
+                    ImageUrl = dish.ImageUrl,
                     InventoryYield = inventoryYield,
                     IsFeaturedGeneral = dish.IsFeaturedGeneral,
                     IsTopWeekly = dish.IsTopWeekly,
@@ -119,7 +121,9 @@ namespace RestaurantApi.Service
                 Category = dishDto.Category,
                 Price = dishDto.Price,
                 IsAvailable = true,
-                RestaurantId = restaurantId
+                RestaurantId = restaurantId,
+                Description = dishDto.Description,
+                ImageUrl = dishDto.ImageUrl
             };
             await dishRepository.AddAsync(newDish);
             await dishRepository.SaveChangesAsync();
@@ -135,6 +139,8 @@ namespace RestaurantApi.Service
             dish.Category = dishDto.Category;
             dish.Price = dishDto.Price;
             dish.DailyStock = dishDto.DailyStock;
+            dish.Description = dishDto.Description;
+            dish.ImageUrl = dishDto.ImageUrl;
             dishRepository.Update(dish);
             return await dishRepository.SaveChangesAsync();
         }
